@@ -1,6 +1,71 @@
-# Sistema de Gestión - Monorepo
+# Sistema de Gestión - Punto de Venta (POS)
 
-Monorepo para el sistema de gestión empresarial construido con **NestJS**, **React**, **TypeORM** y **PostgreSQL**.
+Sistema de gestión comercial y punto de venta completo, diseñado para pequeñas y medianas empresas. Permite administrar ventas, compras, inventario, caja registradora, cuentas corrientes y facturación electrónica AFIP.
+
+## ✨ Características Principales
+
+### 🛒 Punto de Venta (POS)
+- Registro rápido de ventas con búsqueda de productos
+- Múltiples métodos de pago (efectivo, tarjeta, transferencia, etc.)
+- Descuentos y recargos (porcentaje o monto fijo)
+- Aplicación de impuestos configurables
+- Ventas a cuenta corriente de clientes
+
+### 💰 Caja Registradora
+- Apertura y cierre de caja con monto inicial
+- Seguimiento de todos los movimientos (ventas, compras, gastos, ingresos)
+- Resumen de totales por método de pago
+- Historial completo de cajas anteriores
+- Alertas de caja no cerrada del día anterior
+
+### 📦 Gestión de Productos
+- Catálogo de productos con categorías
+- Control de stock con historial de movimientos
+- Alertas de stock bajo
+- Márgenes de ganancia configurables (por producto, categoría o general)
+- Cálculo automático de precios de venta
+
+### 👥 Clientes y Cuentas Corrientes
+- Base de datos de clientes con datos fiscales
+- Cuentas corrientes con límite de crédito
+- Estados de cuenta detallados
+- Registro de pagos y movimientos
+- Historial de compras por cliente
+
+### 🧾 Facturación Electrónica AFIP
+- Integración con AFIP Argentina (homologación y producción)
+- Emisión de facturas A, B y C
+- Gestión automática de tokens WSAA
+- Almacenamiento de CAE y comprobantes
+- Configuración de certificados y CUIT
+
+### 🛍️ Compras y Proveedores
+- Registro de compras a proveedores
+- Gestión de proveedores con datos de contacto
+- Actualización automática de stock
+- Seguimiento de compras pendientes de pago
+
+### 💸 Gastos e Ingresos
+- Registro de gastos operativos por categoría
+- Registro de ingresos adicionales
+- Integración con caja registradora
+- Estados de pago (pendiente/pagado)
+
+### 📊 Reportes y Estadísticas
+- Dashboard con métricas principales
+- Reportes por período (día, semana, mes, año)
+- Productos más vendidos
+- Clientes más frecuentes
+- Gráficos de ventas, compras y gastos
+
+### ⚙️ Configuración
+- Métodos de pago personalizables
+- Tipos de impuestos configurables
+- Margen de ganancia general
+- Configuración fiscal (CUIT, punto de venta, certificados)
+- Gestión de usuarios del sistema
+
+---
 
 ## 📋 Requisitos Previos
 
@@ -13,7 +78,7 @@ Monorepo para el sistema de gestión empresarial construido con **NestJS**, **Re
 ### 1. Clonar el repositorio
 
 ```bash
-git clone <url-del-repo>
+git clone https://github.com/AgustinAlbonico/sistema-gestion.git
 cd sistema-gestion
 ```
 
@@ -41,7 +106,7 @@ Copy-Item env.template .env
 cp env.template .env
 ```
 
-Editar el archivo `.env` con tus valores. Los valores por defecto son:
+Editar el archivo `.env` con tus valores:
 
 ```env
 DATABASE_HOST=localhost
@@ -64,12 +129,6 @@ Esto levantará:
 - **PostgreSQL** en el puerto `5432` 
 - **Redis** en el puerto `6379`
 
-Para verificar que están corriendo:
-
-```bash
-docker-compose ps
-```
-
 ### 6. Ejecutar el proyecto en modo desarrollo
 
 ```bash
@@ -80,147 +139,49 @@ Este comando ejecutará **simultáneamente**:
 - Backend en `http://localhost:3000`
 - Frontend en `http://localhost:5173`
 
+---
+
 ## 📦 Estructura del Proyecto
 
 ```
 sistema-gestion/
 ├── apps/
 │   ├── backend/          # NestJS API
-│   │   ├── src/
-│   │   │   ├── main.ts
-│   │   │   ├── app.module.ts
-│   │   │   ├── app.controller.ts
-│   │   │   └── app.service.ts
-│   │   └── package.json
+│   │   └── src/
+│   │       └── modules/  # Módulos del sistema
+│   │           ├── auth/             # Autenticación
+│   │           ├── sales/            # Ventas
+│   │           ├── products/         # Productos
+│   │           ├── customers/        # Clientes
+│   │           ├── customer-accounts/# Cuentas corrientes
+│   │           ├── cash-register/    # Caja registradora
+│   │           ├── purchases/        # Compras
+│   │           ├── suppliers/        # Proveedores
+│   │           ├── expenses/         # Gastos
+│   │           ├── incomes/          # Ingresos
+│   │           ├── reports/          # Reportes
+│   │           ├── inventory/        # Inventario
+│   │           └── configuration/    # Configuración
 │   │
 │   └── frontend/         # React + Vite
-│       ├── src/
-│       │   ├── main.tsx
-│       │   ├── App.tsx
-│       │   └── index.css
-│       └── package.json
+│       └── src/
+│           ├── features/ # Módulos por funcionalidad
+│           ├── pages/    # Páginas de la aplicación
+│           └── components/ # Componentes reutilizables
 │
-├── packages/             # (Futuro) Paquetes compartidos
+├── packages/             # Paquetes compartidos
 ├── docs/                 # Documentación
 ├── scripts/              # Scripts de utilidad
-├── docker-compose.yml    # Contenedores de desarrollo
-├── turbo.json            # Configuración de Turborepo
-├── pnpm-workspace.yaml   # Workspaces de pnpm
-└── package.json          # Root package.json
+└── docker-compose.yml    # Contenedores de desarrollo
 ```
 
 ## 🛠️ Comandos Disponibles
 
-### Desarrollo
-
 ```bash
 pnpm dev          # Ejecutar backend + frontend en paralelo
-pnpm dev --filter @sistema/backend   # Solo backend
-pnpm dev --filter @sistema/frontend  # Solo frontend
-```
-
-### Build
-
-```bash
 pnpm build        # Compilar todo el proyecto
-pnpm build --filter @sistema/backend
-pnpm build --filter @sistema/frontend
-```
-
-### Linting
-
-```bash
-pnpm lint         # Ejecutar linter en todo el proyecto
-```
-
-### Testing
-
-```bash
+pnpm lint         # Ejecutar linter
 pnpm test         # Ejecutar tests
-```
-
-## 🗄️ Base de Datos
-
-### Acceder al contenedor de PostgreSQL
-
-```bash
-docker exec -it sistema-gestion-db psql -U postgres -d sistema_gestion
-```
-
-### Ver logs de la base de datos
-
-```bash
-docker-compose logs -f postgres
-```
-
-### Detener los contenedores
-
-```bash
-docker-compose down
-```
-
-### Eliminar datos completamente (reset completo)
-
-```bash
-docker-compose down -v
-```
-
-## 🌐 Endpoints Disponibles
-
-### Backend
-- **API Base**: `http://localhost:3000/api`
-- **Health Check**: `http://localhost:3000/api` (GET)
-
-### Frontend
-- **Aplicación**: `http://localhost:5173`
-
-## 🐛 Troubleshooting
-
-### El puerto 3000 está en uso
-
-```bash
-# En Windows PowerShell
-Get-Process -Id (Get-NetTCPConnection -LocalPort 3000).OwningProcess | Stop-Process -Force
-
-# En Linux/Mac
-lsof -ti:3000 | xargs kill -9
-```
-
-### El puerto 5432 está en uso (conflicto con PostgreSQL local)
-
-Opción 1: Cambiar el puerto en `.env` y `docker-compose.yml`:
-```env
-DATABASE_PORT=5433
-```
-
-Opción 2: Detener PostgreSQL local
-```bash
-# Windows (usando servicios)
-Stop-Service postgresql-x64-14
-
-# Linux
-sudo systemctl stop postgresql
-
-# Mac
-brew services stop postgresql
-```
-
-### Limpiar cache de Turbo
-
-```bash
-pnpm turbo clean
-rm -rf node_modules
-pnpm install
-```
-
-### Ver logs del backend o frontend
-
-```bash
-# Backend
-cd apps/backend && pnpm dev
-
-# Frontend
-cd apps/frontend && pnpm dev
 ```
 
 ## 📚 Stack Tecnológico
@@ -229,43 +190,27 @@ cd apps/frontend && pnpm dev
 - **Framework**: NestJS 10
 - **ORM**: TypeORM 0.3
 - **Database**: PostgreSQL 15
-- **Validación**: Zod 3.x + class-validator
-- **Lenguaje**: TypeScript 5
+- **Cache**: Redis 7
+- **Validación**: Zod + class-validator
 
 ### Frontend
 - **Framework**: React 18
 - **Build Tool**: Vite 5
-- **Estilos**: Tailwind CSS 3
+- **Estilos**: Tailwind CSS 3 + shadcn/ui
 - **HTTP Client**: Axios
-- **Lenguaje**: TypeScript 5
+- **Formularios**: React Hook Form + Zod
 
 ### Infraestructura
 - **Monorepo**: Turborepo + pnpm workspaces
 - **Containers**: Docker + Docker Compose
-- **Cache**: Redis 7
+
+---
 
 ## 📖 Documentación Adicional
 
 - [Stack Tecnológico Completo](./docs/stack-tecnologico.md)
 - [Docker Setup](./docs/DOCKER-SETUP-COMPLETO.md)
-- [Utilidades de Fechas (Frontend)](./apps/frontend/src/lib/date-utils.README.md)
-- [Utilidades de Fechas (Backend)](./apps/backend/src/common/utils/date.utils.README.md)
-
-## ⚠️ Importante: Manejo de Fechas
-
-**SIEMPRE usa las utilidades centralizadas de fechas** para evitar problemas de zona horaria:
-
-- **Frontend**: Importa desde `@/lib/date-utils`
-- **Backend**: Importa desde `../../common/utils/date.utils`
-
-**NUNCA uses `new Date('YYYY-MM-DD')` directamente** - puede causar que las fechas se muestren con un día de diferencia.
-
-## 🤝 Contribuir
-
-1. Crear rama feature: `git checkout -b feature/nueva-funcionalidad`
-2. Commit cambios: `git commit -m 'Agregar nueva funcionalidad'`
-3. Push a la rama: `git push origin feature/nueva-funcionalidad`
-4. Crear Pull Request
+- [Estado del Sistema](./docs/estado-sistema.md)
 
 ## 📝 Licencia
 
