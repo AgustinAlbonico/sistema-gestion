@@ -10,6 +10,7 @@ import { GuestRoute } from './components/GuestRoute';
 import { WindowControls } from './components/WindowControls';
 import { KeyboardShortcutsProvider } from './components/KeyboardShortcutsProvider';
 import { BackendHealthCheck } from './components/BackendHealthCheck';
+import { ConfirmProvider } from './components/ConfirmProvider';
 import { useTokenRefresh } from './hooks/useTokenRefresh';
 
 // Lazy loading pages with Default Export
@@ -49,62 +50,64 @@ function App() {
   return (
     <BackendHealthCheck>
       <QueryClientProvider client={queryClient}>
-        {/* Usamos HashRouter en lugar de BrowserRouter para compatibilidad con file:// URLs en Electron */}
-        <HashRouter>
-          <KeyboardShortcutsProvider>
-            <Suspense fallback={
-              <div className="flex h-screen w-full items-center justify-center">
-                <Loader2 className="h-8 w-8 animate-spin text-primary" />
-              </div>
-            }>
-              <Routes>
-                {/* Rutas públicas (solo para no logueados) */}
-                <Route path="/login" element={
-                  <GuestRoute>
-                    <LoginPage />
-                  </GuestRoute>
-                } />
+        <ConfirmProvider>
+          {/* Usamos HashRouter en lugar de BrowserRouter para compatibilidad con file:// URLs en Electron */}
+          <HashRouter>
+            <KeyboardShortcutsProvider>
+              <Suspense fallback={
+                <div className="flex h-screen w-full items-center justify-center">
+                  <Loader2 className="h-8 w-8 animate-spin text-primary" />
+                </div>
+              }>
+                <Routes>
+                  {/* Rutas públicas (solo para no logueados) */}
+                  <Route path="/login" element={
+                    <GuestRoute>
+                      <LoginPage />
+                    </GuestRoute>
+                  } />
 
-                {/* Rutas protegidas */}
-                <Route
-                  path="/"
-                  element={
-                    <ProtectedRoute>
-                      <DashboardLayout />
-                    </ProtectedRoute>
-                  }
-                >
-                  <Route index element={<Navigate to="/dashboard" replace />} />
-                  <Route path="dashboard" element={<DashboardPage />} />
-                  <Route path="products" element={<ProductsPage />} />
-                  <Route path="customers" element={<CustomersPage />} />
-                  <Route path="suppliers" element={<SuppliersPage />} />
-                  <Route path="purchases" element={<PurchasesPage />} />
-                  <Route path="sales" element={<SalesPage />} />
-                  <Route path="expenses" element={<ExpensesPage />} />
-                  <Route path="incomes" element={<IncomesPage />} />
-                  <Route path="cash-register" element={<CashRegisterPage />} />
-                  <Route path="customer-accounts" element={<CustomerAccountsPage />} />
-                  <Route path="customer-accounts/:customerId" element={<AccountStatementPage />} />
-                  <Route path="reports" element={<ReportsPage />} />
-                  <Route path="settings" element={<SettingsPage />} />
-                  <Route path="settings/fiscal" element={<FiscalConfigPage />} />
-                  <Route path="settings/users" element={<UsersManagementPage />} />
-                  <Route path="settings/backup" element={<BackupPage />} />
-                </Route>
+                  {/* Rutas protegidas */}
+                  <Route
+                    path="/"
+                    element={
+                      <ProtectedRoute>
+                        <DashboardLayout />
+                      </ProtectedRoute>
+                    }
+                  >
+                    <Route index element={<Navigate to="/dashboard" replace />} />
+                    <Route path="dashboard" element={<DashboardPage />} />
+                    <Route path="products" element={<ProductsPage />} />
+                    <Route path="customers" element={<CustomersPage />} />
+                    <Route path="suppliers" element={<SuppliersPage />} />
+                    <Route path="purchases" element={<PurchasesPage />} />
+                    <Route path="sales" element={<SalesPage />} />
+                    <Route path="expenses" element={<ExpensesPage />} />
+                    <Route path="incomes" element={<IncomesPage />} />
+                    <Route path="cash-register" element={<CashRegisterPage />} />
+                    <Route path="customer-accounts" element={<CustomerAccountsPage />} />
+                    <Route path="customer-accounts/:customerId" element={<AccountStatementPage />} />
+                    <Route path="reports" element={<ReportsPage />} />
+                    <Route path="settings" element={<SettingsPage />} />
+                    <Route path="settings/fiscal" element={<FiscalConfigPage />} />
+                    <Route path="settings/users" element={<UsersManagementPage />} />
+                    <Route path="settings/backup" element={<BackupPage />} />
+                  </Route>
 
-                {/* Ruta 404 */}
-                <Route path="*" element={<Navigate to="/dashboard" replace />} />
-              </Routes>
-            </Suspense>
-          </KeyboardShortcutsProvider>
-        </HashRouter>
+                  {/* Ruta 404 */}
+                  <Route path="*" element={<Navigate to="/dashboard" replace />} />
+                </Routes>
+              </Suspense>
+            </KeyboardShortcutsProvider>
+          </HashRouter>
 
-        {/* Toast notifications */}
-        <Toaster position="top-center" richColors />
+          {/* Toast notifications */}
+          <Toaster position="top-center" richColors />
 
-        {/* Controles de ventana para Electron (solo visible en desktop) */}
-        <WindowControls />
+          {/* Controles de ventana para Electron (solo visible en desktop) */}
+          <WindowControls />
+        </ConfirmProvider>
       </QueryClientProvider>
     </BackendHealthCheck>
   );

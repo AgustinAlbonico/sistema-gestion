@@ -2,6 +2,7 @@
  * Página de Clientes - Gestión completa de clientes
  */
 import { useState, useCallback } from 'react';
+import { useConfirm } from '@/hooks/useConfirm';
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
 import { toast } from 'sonner';
 import { Plus, Tags, Users } from 'lucide-react';
@@ -35,6 +36,7 @@ export default function CustomersPage() {
     const [isCategoryOpen, setIsCategoryOpen] = useState(false);
     const [newCategoryName, setNewCategoryName] = useState('');
     const queryClient = useQueryClient();
+    const confirm = useConfirm();
 
     // Query para estadísticas
     const { data: stats } = useQuery({
@@ -136,7 +138,13 @@ export default function CustomersPage() {
         const newStatus = !customer.isActive;
         const action = newStatus ? 'activar' : 'desactivar';
 
-        if (confirm(`¿Estás seguro de ${action} este cliente?`)) {
+        const confirmed = await confirm({
+            title: newStatus ? 'Activar cliente' : 'Desactivar cliente',
+            description: `¿Estás seguro de ${action} este cliente?`,
+            variant: newStatus ? 'default' : 'warning',
+            confirmLabel: newStatus ? 'Activar' : 'Desactivar',
+        });
+        if (confirmed) {
             toggleStatusMutation.mutate({ id, isActive: newStatus });
         }
     };
@@ -192,8 +200,14 @@ export default function CustomersPage() {
                                                             ? `${cat.color}20`
                                                             : undefined,
                                                     }}
-                                                    onClick={() => {
-                                                        if (confirm(`¿Eliminar "${cat.name}"?`)) {
+                                                    onClick={async () => {
+                                                        const confirmed = await confirm({
+                                                            title: 'Eliminar categoría',
+                                                            description: `¿Estás seguro de eliminar "${cat.name}"?`,
+                                                            variant: 'danger',
+                                                            confirmLabel: 'Eliminar',
+                                                        });
+                                                        if (confirmed) {
                                                             deleteCategoryMutation.mutate(cat.id);
                                                         }
                                                     }}

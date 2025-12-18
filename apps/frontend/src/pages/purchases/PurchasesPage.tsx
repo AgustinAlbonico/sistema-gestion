@@ -3,6 +3,7 @@
  * Gestión completa de compras a proveedores con integración a inventario y gastos
  */
 import { useState, useMemo, useCallback } from 'react';
+import { useConfirm } from '@/hooks/useConfirm';
 import { useMutation, useQueryClient } from '@tanstack/react-query';
 import { toast } from 'sonner';
 import { Plus, Filter, Package, RotateCcw, ShoppingCart } from 'lucide-react';
@@ -70,6 +71,7 @@ export default function PurchasesPage() {
     });
 
     const queryClient = useQueryClient();
+    const confirm = useConfirm();
 
     // Estado de la caja actual (si hay caja abierta hoy)
     const { data: openRegister } = useOpenCashRegister();
@@ -150,8 +152,14 @@ export default function PurchasesPage() {
 
     // Creating expenses from purchases removed
 
-    const handleDelete = (id: string) => {
-        if (confirm('¿Eliminar esta compra? Esta acción no se puede deshacer.')) {
+    const handleDelete = async (id: string) => {
+        const confirmed = await confirm({
+            title: 'Eliminar compra',
+            description: '¿Eliminar esta compra? Esta acción no se puede deshacer.',
+            variant: 'danger',
+            confirmLabel: 'Eliminar',
+        });
+        if (confirmed) {
             deleteMutation.mutate(id);
         }
     };

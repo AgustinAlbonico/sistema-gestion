@@ -1,4 +1,5 @@
 import { useState } from 'react';
+import { useConfirm } from '@/hooks/useConfirm';
 import { ProductList } from '@/features/products/components/ProductList';
 import { ProductForm } from '@/features/products/components/ProductForm';
 import { Button } from '@/components/ui/button';
@@ -38,6 +39,7 @@ export default function ProductsPage() {
     const [editCategoryMargin, setEditCategoryMargin] = useState<number | undefined>(undefined);
 
     const queryClient = useQueryClient();
+    const confirm = useConfirm();
 
     // Query para categorías
     const { data: categories } = useQuery({
@@ -129,8 +131,14 @@ export default function ProductsPage() {
         }
     };
 
-    const handleDelete = (id: string) => {
-        if (confirm('¿Eliminar este producto?')) {
+    const handleDelete = async (id: string) => {
+        const confirmed = await confirm({
+            title: 'Eliminar producto',
+            description: '¿Estás seguro de eliminar este producto?',
+            variant: 'danger',
+            confirmLabel: 'Eliminar',
+        });
+        if (confirmed) {
             deleteMutation.mutate(id);
         }
     };
@@ -234,8 +242,14 @@ export default function ProductsPage() {
                                                             variant="ghost"
                                                             size="icon"
                                                             className="text-destructive hover:text-destructive"
-                                                            onClick={() => {
-                                                                if (confirm(`¿Eliminar "${cat.name}"?`)) {
+                                                            onClick={async () => {
+                                                                const confirmed = await confirm({
+                                                                    title: 'Eliminar categoría',
+                                                                    description: `¿Estás seguro de eliminar "${cat.name}"?`,
+                                                                    variant: 'danger',
+                                                                    confirmLabel: 'Eliminar',
+                                                                });
+                                                                if (confirmed) {
                                                                     deleteCategoryMutation.mutate(cat.id);
                                                                 }
                                                             }}

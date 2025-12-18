@@ -8,7 +8,7 @@ import {
     BadRequestException,
 } from '@nestjs/common';
 import { InjectRepository } from '@nestjs/typeorm';
-import { Repository, DataSource, Like } from 'typeorm';
+import { Repository, DataSource, Like, EntityManager, SelectQueryBuilder } from 'typeorm';
 import { Sale, SaleStatus } from './entities/sale.entity';
 import { SaleItem } from './entities/sale-item.entity';
 import { SalePayment } from './entities/sale-payment.entity';
@@ -27,6 +27,7 @@ import { StockMovementType, StockMovementSource } from '../inventory/entities/st
 import { parseLocalDate } from '../../common/utils/date.utils';
 import { AuditService } from '../audit/audit.service';
 import { AuditEntityType, AuditAction } from '../audit/enums';
+import { PaymentDto } from '../auth/interfaces';
 
 export interface SaleStats {
     totalSales: number;
@@ -131,7 +132,7 @@ export class SalesService {
      * Crea los items de la venta
      */
     private async createSaleItems(
-        manager: any,
+        manager: EntityManager,
         saleId: string,
         items: CreateSaleDto['items']
     ): Promise<void> {
@@ -156,7 +157,7 @@ export class SalesService {
      * Crea los impuestos de la venta
      */
     private async createSaleTaxes(
-        manager: any,
+        manager: EntityManager,
         saleId: string,
         taxes: CreateSaleDto['taxes']
     ): Promise<void> {
@@ -177,7 +178,7 @@ export class SalesService {
      * Crea los pagos de la venta
      */
     private async createSalePayments(
-        manager: any,
+        manager: EntityManager,
         saleId: string,
         payments: CreateSaleDto['payments']
     ): Promise<void> {
@@ -370,7 +371,7 @@ export class SalesService {
     /**
      * Aplica filtros de estado de facturación al query
      */
-    private applyInvoiceStatusFilter(query: any, invoiceStatus: string): void {
+    private applyInvoiceStatusFilter(query: SelectQueryBuilder<Sale>, invoiceStatus: string): void {
         switch (invoiceStatus) {
             case 'fiscal':
                 query.andWhere('sale.isFiscal = :isFiscal', { isFiscal: true });
@@ -393,7 +394,7 @@ export class SalesService {
     /**
      * Aplica filtros de fecha al query de ventas
      */
-    private applyDateFilters(query: any, startDate?: string, endDate?: string): void {
+    private applyDateFilters(query: SelectQueryBuilder<Sale>, startDate?: string, endDate?: string): void {
         if (startDate && endDate) {
             query.andWhere('DATE(sale.saleDate) BETWEEN :start AND :end', { start: startDate, end: endDate });
         } else if (startDate) {
@@ -406,7 +407,7 @@ export class SalesService {
     /**
      * Aplica filtros básicos de búsqueda al query de ventas
      */
-    private applySearchFilters(query: any, filters: SaleFiltersDto): void {
+    private applySearchFilters(query: SelectQueryBuilder<Sale>, filters: SaleFiltersDto): void {
         if (filters.search) {
             query.andWhere(
                 '(sale.saleNumber ILIKE :search OR sale.customerName ILIKE :search OR customer.firstName ILIKE :search OR customer.lastName ILIKE :search)',
@@ -639,7 +640,7 @@ export class SalesService {
     /**
      * Marca una venta pendiente como pagada
      */
-    async markAsPaid(id: string, payments: any[], userId?: string): Promise<Sale> {
+    async markAsPaid(id: string, payments: PaymentDto[], userId?: string): Promise<Sale> {
         const sale = await this.findOne(id);
 
         if (sale.status === SaleStatus.CANCELLED) {
@@ -831,7 +832,7 @@ export class SalesService {
      */
     private async updateInventoryFromSale(
         saleId: string,
-        manager: any
+        manager: EntityManager
     ): Promise<void> {
         // Usar el manager de la transacción para obtener la venta
         // Esto evita el error 404 que ocurre con this.findOne dentro de una transacción no commiteada

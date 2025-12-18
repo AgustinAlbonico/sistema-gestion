@@ -3,6 +3,7 @@
  * Gestión completa de ingresos por servicios con estadísticas y categorías
  */
 import { useState, useMemo, useCallback } from 'react';
+import { useConfirm } from '@/hooks/useConfirm';
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
 import { toast } from 'sonner';
 import { Plus, Tags, RefreshCw, Wallet } from 'lucide-react';
@@ -67,6 +68,7 @@ export default function IncomesPage() {
     });
 
     const queryClient = useQueryClient();
+    const confirm = useConfirm();
 
     // Estado de la caja actual
     const { data: openRegister } = useOpenCashRegister();
@@ -175,8 +177,14 @@ export default function IncomesPage() {
         }
     };
 
-    const handleDelete = (id: string) => {
-        if (confirm('¿Eliminar este ingreso?')) {
+    const handleDelete = async (id: string) => {
+        const confirmed = await confirm({
+            title: 'Eliminar ingreso',
+            description: '¿Estás seguro de eliminar este ingreso?',
+            variant: 'danger',
+            confirmLabel: 'Eliminar',
+        });
+        if (confirmed) {
             deleteMutation.mutate(id);
         }
     };
@@ -328,8 +336,14 @@ export default function IncomesPage() {
                                                     key={cat.id}
                                                     variant="secondary"
                                                     className="cursor-pointer hover:bg-destructive hover:text-destructive-foreground flex items-center gap-1"
-                                                    onClick={() => {
-                                                        if (confirm(`¿Eliminar "${cat.name}"?`)) {
+                                                    onClick={async () => {
+                                                        const confirmed = await confirm({
+                                                            title: 'Eliminar categoría',
+                                                            description: `¿Estás seguro de eliminar "${cat.name}"?`,
+                                                            variant: 'danger',
+                                                            confirmLabel: 'Eliminar',
+                                                        });
+                                                        if (confirmed) {
                                                             deleteCategoryMutation.mutate(cat.id);
                                                         }
                                                     }}

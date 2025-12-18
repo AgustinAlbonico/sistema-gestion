@@ -3,6 +3,7 @@
  * Gestión completa de ventas con punto de venta integrado
  */
 import { useState, useMemo, useCallback } from 'react';
+import { useConfirm } from '@/hooks/useConfirm';
 import { useMutation, useQueryClient } from '@tanstack/react-query';
 import { toast } from 'sonner';
 import { Plus, Filter, ShoppingCart, RotateCcw } from 'lucide-react';
@@ -70,6 +71,7 @@ export default function SalesPage() {
     });
 
     const queryClient = useQueryClient();
+    const confirm = useConfirm();
 
     // Estado de la caja actual (si hay caja abierta hoy)
     const { data: openRegister } = useOpenCashRegister();
@@ -143,8 +145,14 @@ export default function SalesPage() {
         setViewingSale(sale);
     };
 
-    const handleCancel = (id: string) => {
-        if (confirm('¿Cancelar esta venta? Si ya se actualizó el inventario, se revertirá.')) {
+    const handleCancel = async (id: string) => {
+        const confirmed = await confirm({
+            title: 'Cancelar venta',
+            description: '¿Cancelar esta venta? Si ya se actualizó el inventario, se revertirá.',
+            variant: 'warning',
+            confirmLabel: 'Cancelar venta',
+        });
+        if (confirmed) {
             cancelMutation.mutate(id);
         }
     };
@@ -154,8 +162,14 @@ export default function SalesPage() {
         toast.info('Funcionalidad de pago pendiente en próxima versión');
     };
 
-    const handleDelete = (id: string) => {
-        if (confirm('¿Eliminar esta venta? Esta acción no se puede deshacer.')) {
+    const handleDelete = async (id: string) => {
+        const confirmed = await confirm({
+            title: 'Eliminar venta',
+            description: '¿Eliminar esta venta? Esta acción no se puede deshacer.',
+            variant: 'danger',
+            confirmLabel: 'Eliminar',
+        });
+        if (confirmed) {
             deleteMutation.mutate(id);
         }
     };

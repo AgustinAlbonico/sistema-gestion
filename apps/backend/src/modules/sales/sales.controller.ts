@@ -22,6 +22,7 @@ import {
     SaleFiltersDto,
 } from './dto';
 import { JwtAuthGuard } from '../auth/guards/jwt-auth.guard';
+import { AuthenticatedRequest, PaymentDto } from '../auth/interfaces';
 
 @Controller('sales')
 @UseGuards(JwtAuthGuard)
@@ -32,7 +33,7 @@ export class SalesController {
      * Crea una nueva venta
      */
     @Post()
-    create(@Body() dto: CreateSaleDto, @Request() req: any) {
+    create(@Body() dto: CreateSaleDto, @Request() req: AuthenticatedRequest) {
         return this.salesService.create(dto, req.user?.userId);
     }
 
@@ -78,7 +79,7 @@ export class SalesController {
     update(
         @Param('id', ParseUUIDPipe) id: string,
         @Body() dto: UpdateSaleDto,
-        @Request() req: any,
+        @Request() req: AuthenticatedRequest,
     ) {
         return this.salesService.update(id, dto, req.user?.userId);
     }
@@ -87,7 +88,7 @@ export class SalesController {
      * Cancela una venta
      */
     @Patch(':id/cancel')
-    cancel(@Param('id', ParseUUIDPipe) id: string, @Request() req: any) {
+    cancel(@Param('id', ParseUUIDPipe) id: string, @Request() req: AuthenticatedRequest) {
         return this.salesService.cancel(id, req.user?.userId);
     }
 
@@ -97,8 +98,8 @@ export class SalesController {
     @Patch(':id/pay')
     markAsPaid(
         @Param('id', ParseUUIDPipe) id: string,
-        @Body() body: { payments: any[] },
-        @Request() req: any,
+        @Body() body: { payments: PaymentDto[] },
+        @Request() req: AuthenticatedRequest,
     ) {
         return this.salesService.markAsPaid(id, body.payments || [], req.user?.userId);
     }
@@ -107,7 +108,7 @@ export class SalesController {
      * Elimina una venta (soft delete)
      */
     @Delete(':id')
-    remove(@Param('id', ParseUUIDPipe) id: string, @Request() req: any) {
+    remove(@Param('id', ParseUUIDPipe) id: string, @Request() req: AuthenticatedRequest) {
         return this.salesService.remove(id, req.user?.userId);
     }
 }

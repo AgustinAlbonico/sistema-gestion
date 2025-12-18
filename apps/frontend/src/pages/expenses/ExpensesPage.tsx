@@ -1,4 +1,5 @@
 import { useState, useMemo, useCallback } from 'react';
+import { useConfirm } from '@/hooks/useConfirm';
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
 import { toast } from 'sonner';
 import { Plus, Tags, RefreshCw, Receipt } from 'lucide-react';
@@ -66,6 +67,7 @@ export default function ExpensesPage() {
     });
 
     const queryClient = useQueryClient();
+    const confirm = useConfirm();
 
     // Estado de la caja actual (si hay caja abierta hoy)
     const { data: openRegister } = useOpenCashRegister();
@@ -176,8 +178,14 @@ export default function ExpensesPage() {
         }
     };
 
-    const handleDelete = (id: string) => {
-        if (confirm('¿Eliminar este gasto?')) {
+    const handleDelete = async (id: string) => {
+        const confirmed = await confirm({
+            title: 'Eliminar gasto',
+            description: '¿Estás seguro de eliminar este gasto?',
+            variant: 'danger',
+            confirmLabel: 'Eliminar',
+        });
+        if (confirmed) {
             deleteMutation.mutate(id);
         }
     };
@@ -368,8 +376,14 @@ export default function ExpensesPage() {
                                                     key={cat.id}
                                                     variant="secondary"
                                                     className="cursor-pointer hover:bg-destructive hover:text-destructive-foreground flex items-center gap-1"
-                                                    onClick={() => {
-                                                        if (confirm(`¿Eliminar "${cat.name}"?`)) {
+                                                    onClick={async () => {
+                                                        const confirmed = await confirm({
+                                                            title: 'Eliminar categoría',
+                                                            description: `¿Estás seguro de eliminar "${cat.name}"?`,
+                                                            variant: 'danger',
+                                                            confirmLabel: 'Eliminar',
+                                                        });
+                                                        if (confirmed) {
                                                             deleteCategoryMutation.mutate(cat.id);
                                                         }
                                                     }}

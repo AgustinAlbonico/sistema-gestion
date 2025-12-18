@@ -2,6 +2,7 @@
  * Página de Proveedores - Gestión completa de proveedores
  */
 import { useState, useCallback } from 'react';
+import { useConfirm } from '@/hooks/useConfirm';
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
 import { toast } from 'sonner';
 import { Plus, Truck } from 'lucide-react';
@@ -21,6 +22,7 @@ export default function SuppliersPage() {
     const [isCreateOpen, setIsCreateOpen] = useState(false);
     const [editingSupplier, setEditingSupplier] = useState<Supplier | null>(null);
     const queryClient = useQueryClient();
+    const confirm = useConfirm();
 
     // Query para estadísticas
     const { data: stats } = useQuery({
@@ -92,7 +94,13 @@ export default function SuppliersPage() {
         const newStatus = !supplier.isActive;
         const action = newStatus ? 'activar' : 'desactivar';
 
-        if (confirm(`¿Estás seguro de ${action} este proveedor?`)) {
+        const confirmed = await confirm({
+            title: newStatus ? 'Activar proveedor' : 'Desactivar proveedor',
+            description: `¿Estás seguro de ${action} este proveedor?`,
+            variant: newStatus ? 'default' : 'warning',
+            confirmLabel: newStatus ? 'Activar' : 'Desactivar',
+        });
+        if (confirmed) {
             toggleStatusMutation.mutate({ id, isActive: newStatus });
         }
     };

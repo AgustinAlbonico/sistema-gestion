@@ -590,6 +590,46 @@ function showLoadingScreen(): BrowserWindow {
 // AUTO-ACTUALIZACIÓN
 // ============================================
 
+/**
+ * Limpia el cache de actualizaciones (instaladores descargados)
+ * para liberar espacio en disco del cliente
+ */
+function cleanUpdateCache(): void {
+    try {
+        // Electron-updater guarda los instaladores en %LOCALAPPDATA%/NexoPOS-updater
+        const updateCacheDir = path.join(
+            process.env.LOCALAPPDATA || app.getPath('userData'),
+            'nexopos-updater'
+        );
+
+        // También limpiar el cache estándar de electron-updater
+        const standardCacheDir = path.join(app.getPath('userData'), 'pending');
+
+        const dirsToClean = [updateCacheDir, standardCacheDir];
+
+        for (const dir of dirsToClean) {
+            if (fs.existsSync(dir)) {
+                const files = fs.readdirSync(dir);
+                for (const file of files) {
+                    // Solo borrar archivos .exe y .blockmap (instaladores)
+                    if (file.endsWith('.exe') || file.endsWith('.blockmap') || file.endsWith('.zip')) {
+                        const filePath = path.join(dir, file);
+                        try {
+                            fs.unlinkSync(filePath);
+                            log.info(`[AutoUpdater] Limpiado cache: ${file}`);
+                        } catch (err) {
+                            // Ignorar si el archivo está en uso
+                            log.warn(`[AutoUpdater] No se pudo borrar ${file}: archivo en uso`);
+                        }
+                    }
+                }
+            }
+        }
+    } catch (err) {
+        log.warn('[AutoUpdater] Error limpiando cache de actualizaciones:', err);
+    }
+}
+
 function setupAutoUpdater(): void {
     // Configurar logger de auto-updater
     autoUpdater.logger = log;
@@ -601,6 +641,15 @@ function setupAutoUpdater(): void {
     }
 
     log.info('[Electron] Configurando auto-updater...');
+
+    // ============================================
+    // CONFIGURACIÓN PARA LIBERAR ESPACIO
+    // ============================================
+    // Instalar automáticamente al cerrar la app y borrar el instalador
+    autoUpdater.autoInstallOnAppQuit = true;
+
+    // Limpiar cache de actualizaciones anteriores al iniciar
+    cleanUpdateCache();
 
     // Ventana de progreso de descarga
     let progressWindow: BrowserWindow | null = null;
