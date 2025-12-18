@@ -1,6 +1,10 @@
 appId: com.nexopos.app
 productName: NexoPOS
 copyright: Copyright © 2024
+
+# Nombre del instalador con guiones (compatible con electron-updater)
+artifactName: "${productName}-Setup-${version}.${ext}"
+
 directories:
   output: release
   buildResources: build

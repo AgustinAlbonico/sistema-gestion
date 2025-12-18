@@ -80,11 +80,16 @@ JWT_EXPIRATION=36500d
       `.trim();
 
             // Ruta del archivo .env
-            // En desarrollo: carpeta desktop
-            // En producción: junto al ejecutable (consistente con main.ts)
-            const envPath = isDev
-                ? path.join(__dirname, '../../.env')
-                : path.join(path.dirname(app.getPath('exe')), '.env');
+            // En desarrollo: raíz del monorepo
+            // En producción: %APPDATA%/NexoPOS/.env (persiste entre actualizaciones)
+            let envPath: string;
+            if (isDev) {
+                envPath = path.join(__dirname, '../../.env');
+            } else {
+                // Usar userData que persiste entre actualizaciones
+                const userDataDir = app.getPath('userData');
+                envPath = path.join(userDataDir, '.env');
+            }
 
             console.log(`[Setup] Guardando .env en: ${envPath}`);
             await fs.writeFile(envPath, envContent);

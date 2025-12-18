@@ -190,10 +190,24 @@ function parseEnvFile(filePath: string): Record<string, string> {
 }
 
 /**
+ * Obtiene la ruta del archivo .env en userData (persiste entre actualizaciones)
+ * Esta es la ubicación CORRECTA para configuración en producción
+ */
+function getEnvFilePath(): string {
+    if (isDev) {
+        return path.join(__dirname, '../../../../.env'); // Raíz del monorepo
+    }
+    // En producción: %APPDATA%/NexoPOS/.env (persiste entre actualizaciones)
+    const userDataDir = app.getPath('userData');
+    return path.join(userDataDir, '.env');
+}
+
+/**
  * Carga variables de entorno desde un archivo .env externo (si existe)
  * Prioridad: 
- * 1. .env junto al ejecutable (producción)
- * 2. .env en raíz del proyecto (desarrollo)
+ * 1. %APPDATA%/NexoPOS/.env (producción - persiste entre actualizaciones)
+ * 2. .env junto al ejecutable (legacy/migración)
+ * 3. .env en raíz del proyecto (desarrollo)
  */
 function loadExternalEnv(): Record<string, string> {
     const envVars: Record<string, string> = {};
@@ -206,12 +220,34 @@ function loadExternalEnv(): Record<string, string> {
         possiblePaths.push(path.join(__dirname, '../../.env')); // dist/electron -> dist -> desktop
         possiblePaths.push(path.join(__dirname, '../../../../.env')); // Raíz del monorepo
     } else {
-        // En producción: junto al ejecutable (.exe)
+        // En producción:
+        // 1. PRIMERO: %APPDATA%/NexoPOS/.env (nueva ubicación, persiste entre updates)
+        const userDataEnv = path.join(app.getPath('userData'), '.env');
+        possiblePaths.push(userDataEnv);
+
+        // 2. LEGACY: junto al ejecutable (para migración de instalaciones antiguas)
         const exeDir = path.dirname(app.getPath('exe'));
-        possiblePaths.push(path.join(exeDir, '.env'));
+        const legacyEnvPath = path.join(exeDir, '.env');
+        possiblePaths.push(legacyEnvPath);
 
         // También buscar en resources (útil para debug)
         possiblePaths.push(path.join(process.resourcesPath, '.env'));
+
+        // MIGRACIÓN AUTOMÁTICA: Si existe en ubicación legacy pero no en userData, copiar
+        if (fs.existsSync(legacyEnvPath) && !fs.existsSync(userDataEnv)) {
+            try {
+                log.info(`[Electron] Migrando .env de ${legacyEnvPath} a ${userDataEnv}`);
+                // Asegurar que el directorio existe
+                const userDataDir = path.dirname(userDataEnv);
+                if (!fs.existsSync(userDataDir)) {
+                    fs.mkdirSync(userDataDir, { recursive: true });
+                }
+                fs.copyFileSync(legacyEnvPath, userDataEnv);
+                log.info('[Electron] Migración de .env completada');
+            } catch (err) {
+                log.error('[Electron] Error migrando .env:', err);
+            }
+        }
     }
 
     log.info(`[Electron] Buscando configuración externa en: ${JSON.stringify(possiblePaths)}`);
