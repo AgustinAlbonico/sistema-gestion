@@ -1,393 +1,180 @@
 appId: com.nexopos.app
 productName: NexoPOS
 copyright: Copyright © 2024
-
-# Versión de Electron (necesaria para npm workspaces donde electron está hoisted)
-electronVersion: "39.2.7"
-
-# Directorios
 directories:
   output: release
   buildResources: build
 
-# Archivos a incluir en el empaquetado
 files:
-  - dist/**/*
+  - dist/electron/**/*
+  - dist/renderer/**/*
+  - dist/scripts/**/*
   - build/**/*
   - package.json
-  # Incluir dependencias del main process (electron-updater, fs-extra, etc.)
-  - node_modules/**/*
-  - "!**/*.map"
-  - "!**/*.ts"
-  - "!**/node_modules/*/{CHANGELOG.md,README.md,readme.md,README,readme}"
-  - "!**/node_modules/*/{test,tests,example,examples,docs}"
-  - "!**/node_modules/.bin"
 
-# Archivos extra - Backend bundleado
 extraResources:
-  # Setup Wizard HTML
   - from: electron/setup
     to: setup
-    filter:
-      - "**/*"
-
-  # Bundle del backend (un solo archivo JS con todas las dependencias)
   - from: ../backend/dist-bundle
     to: backend/dist
     filter:
       - "**/*"
-  
-  # Puppeteer es necesario para generar PDFs (tiene binarios nativos, no se puede bundlear)
-  # Con npm workspaces, puppeteer está hoisted al node_modules raíz
-  - from: ../../node_modules/puppeteer
-    to: backend/node_modules/puppeteer
+      - "!**/*.map"
+  # Copiar node_modules con exclusiones agresivas para reducir archivos
+  - from: ../../node_modules
+    to: backend/node_modules
     filter:
       - "**/*"
+      # ========================================
+      # ARCHIVOS INNECESARIOS (reducen cantidad de archivos)
+      # ========================================
       - "!**/*.md"
+      - "!**/*.markdown"
       - "!**/*.txt"
+      - "!**/README*"
+      - "!**/readme*"
+      - "!**/CHANGELOG*"
+      - "!**/changelog*"
+      - "!**/HISTORY*"
+      - "!**/history*"
+      - "!**/LICENSE*"
+      - "!**/license*"
+      - "!**/LICENCE*"
+      - "!**/licence*"
+      - "!**/AUTHORS*"
+      - "!**/CONTRIBUTORS*"
+      - "!**/.npmignore"
+      - "!**/.gitignore"
+      - "!**/.gitattributes"
+      - "!**/.editorconfig"
+      - "!**/.eslintrc*"
+      - "!**/.prettierrc*"
+      - "!**/tsconfig*.json"
+      - "!**/tslint.json"
+      - "!**/.travis.yml"
+      - "!**/appveyor.yml"
+      - "!**/.circleci/**"
+      - "!**/.github/**"
       - "!**/docs/**"
-  
-  # Puppeteer-core (dependencia de puppeteer)
-  - from: ../../node_modules/puppeteer-core
-    to: backend/node_modules/puppeteer-core
-    filter:
-      - "**/*"
-      - "!**/*.md"
-      - "!**/*.txt"
-      - "!**/docs/**"
-  
-  # Dependencias transitivas de puppeteer (hoisted al node_modules raíz)
-  - from: ../../node_modules/fs-extra
-    to: backend/node_modules/fs-extra
-    filter:
-      - "**/*"
-      - "!**/*.md"
-  - from: ../../node_modules/universalify
-    to: backend/node_modules/universalify
-    filter:
-      - "**/*"
-      - "!**/*.md"
-  - from: ../../node_modules/graceful-fs
-    to: backend/node_modules/graceful-fs
-    filter:
-      - "**/*"
-      - "!**/*.md"
-  - from: ../../node_modules/jsonfile
-    to: backend/node_modules/jsonfile
-    filter:
-      - "**/*"
-      - "!**/*.md"
-  
-  # Express y dependencias que tienen problemas de bundling con webpack
-  - from: ../../node_modules/express
-    to: backend/node_modules/express
-    filter:
-      - "**/*"
-      - "!**/*.md"
-  - from: ../../node_modules/mime
-    to: backend/node_modules/mime
-    filter:
-      - "**/*"
-      - "!**/*.md"
-  - from: ../../node_modules/send
-    to: backend/node_modules/send
-    filter:
-      - "**/*"
-      - "!**/*.md"
-  - from: ../../node_modules/serve-static
-    to: backend/node_modules/serve-static
-    filter:
-      - "**/*"
-      - "!**/*.md"
-  - from: ../../node_modules/content-disposition
-    to: backend/node_modules/content-disposition
-    filter:
-      - "**/*"
-      - "!**/*.md"
-  - from: ../../node_modules/content-type
-    to: backend/node_modules/content-type
-    filter:
-      - "**/*"
-      - "!**/*.md"
-  - from: ../../node_modules/mime-types
-    to: backend/node_modules/mime-types
-    filter:
-      - "**/*"
-      - "!**/*.md"
-  - from: ../../node_modules/mime-db
-    to: backend/node_modules/mime-db
-    filter:
-      - "**/*"
-      - "!**/*.md"
-  
-  # Otras dependencias de Express
-  - from: ../../node_modules/body-parser
-    to: backend/node_modules/body-parser
-    filter:
-      - "**/*"
-      - "!**/*.md"
-  - from: ../../node_modules/raw-body
-    to: backend/node_modules/raw-body
-    filter:
-      - "**/*"
-      - "!**/*.md"
-  - from: ../../node_modules/bytes
-    to: backend/node_modules/bytes
-    filter:
-      - "**/*"
-      - "!**/*.md"
-  - from: ../../node_modules/iconv-lite
-    to: backend/node_modules/iconv-lite
-    filter:
-      - "**/*"
-      - "!**/*.md"
-  - from: ../../node_modules/unpipe
-    to: backend/node_modules/unpipe
-    filter:
-      - "**/*"
-      - "!**/*.md"
-  - from: ../../node_modules/depd
-    to: backend/node_modules/depd
-    filter:
-      - "**/*"
-      - "!**/*.md"
-  - from: ../../node_modules/destroy
-    to: backend/node_modules/destroy
-    filter:
-      - "**/*"
-      - "!**/*.md"
-  - from: ../../node_modules/http-errors
-    to: backend/node_modules/http-errors
-    filter:
-      - "**/*"
-      - "!**/*.md"
-  - from: ../../node_modules/statuses
-    to: backend/node_modules/statuses
-    filter:
-      - "**/*"
-      - "!**/*.md"
-  - from: ../../node_modules/on-finished
-    to: backend/node_modules/on-finished
-    filter:
-      - "**/*"
-      - "!**/*.md"
-  - from: ../../node_modules/ee-first
-    to: backend/node_modules/ee-first
-    filter:
-      - "**/*"
-      - "!**/*.md"
-  - from: ../../node_modules/encodeurl
-    to: backend/node_modules/encodeurl
-    filter:
-      - "**/*"
-      - "!**/*.md"
-  - from: ../../node_modules/escape-html
-    to: backend/node_modules/escape-html
-    filter:
-      - "**/*"
-      - "!**/*.md"
-  - from: ../../node_modules/etag
-    to: backend/node_modules/etag
-    filter:
-      - "**/*"
-      - "!**/*.md"
-  - from: ../../node_modules/fresh
-    to: backend/node_modules/fresh
-    filter:
-      - "**/*"
-      - "!**/*.md"
-  - from: ../../node_modules/ms
-    to: backend/node_modules/ms
-    filter:
-      - "**/*"
-      - "!**/*.md"
-  - from: ../../node_modules/range-parser
-    to: backend/node_modules/range-parser
-    filter:
-      - "**/*"
-      - "!**/*.md"
-  - from: ../../node_modules/parseurl
-    to: backend/node_modules/parseurl
-    filter:
-      - "**/*"
-      - "!**/*.md"
-  - from: ../../node_modules/accepts
-    to: backend/node_modules/accepts
-    filter:
-      - "**/*"
-      - "!**/*.md"
-  - from: ../../node_modules/negotiator
-    to: backend/node_modules/negotiator
-    filter:
-      - "**/*"
-      - "!**/*.md"
-  - from: ../../node_modules/cookie
-    to: backend/node_modules/cookie
-    filter:
-      - "**/*"
-      - "!**/*.md"
-  - from: ../../node_modules/cookie-signature
-    to: backend/node_modules/cookie-signature
-    filter:
-      - "**/*"
-      - "!**/*.md"
-  - from: ../../node_modules/type-is
-    to: backend/node_modules/type-is
-    filter:
-      - "**/*"
-      - "!**/*.md"
-  - from: ../../node_modules/media-typer
-    to: backend/node_modules/media-typer
-    filter:
-      - "**/*"
-      - "!**/*.md"
-  - from: ../../node_modules/vary
-    to: backend/node_modules/vary
-    filter:
-      - "**/*"
-      - "!**/*.md"
-  - from: ../../node_modules/utils-merge
-    to: backend/node_modules/utils-merge
-    filter:
-      - "**/*"
-      - "!**/*.md"
-  - from: ../../node_modules/merge-descriptors
-    to: backend/node_modules/merge-descriptors
-    filter:
-      - "**/*"
-      - "!**/*.md"
-  - from: ../../node_modules/methods
-    to: backend/node_modules/methods
-    filter:
-      - "**/*"
-      - "!**/*.md"
-  - from: ../../node_modules/finalhandler
-    to: backend/node_modules/finalhandler
-    filter:
-      - "**/*"
-      - "!**/*.md"
-  - from: ../../node_modules/array-flatten
-    to: backend/node_modules/array-flatten
-    filter:
-      - "**/*"
-      - "!**/*.md"
-  - from: ../../node_modules/path-to-regexp
-    to: backend/node_modules/path-to-regexp
-    filter:
-      - "**/*"
-      - "!**/*.md"
-  - from: ../../node_modules/proxy-addr
-    to: backend/node_modules/proxy-addr
-    filter:
-      - "**/*"
-      - "!**/*.md"
-  - from: ../../node_modules/forwarded
-    to: backend/node_modules/forwarded
-    filter:
-      - "**/*"
-      - "!**/*.md"
-  - from: ../../node_modules/ipaddr.js
-    to: backend/node_modules/ipaddr.js
-    filter:
-      - "**/*"
-      - "!**/*.md"
-  - from: ../../node_modules/qs
-    to: backend/node_modules/qs
-    filter:
-      - "**/*"
-      - "!**/*.md"
-  - from: ../../node_modules/side-channel
-    to: backend/node_modules/side-channel
-    filter:
-      - "**/*"
-      - "!**/*.md"
-  - from: ../../node_modules/get-intrinsic
-    to: backend/node_modules/get-intrinsic
-    filter:
-      - "**/*"
-      - "!**/*.md"
-  - from: ../../node_modules/call-bind-apply-helpers
-    to: backend/node_modules/call-bind-apply-helpers
-    filter:
-      - "**/*"
-      - "!**/*.md"
-  - from: ../../node_modules/es-errors
-    to: backend/node_modules/es-errors
-    filter:
-      - "**/*"
-      - "!**/*.md"
-  - from: ../../node_modules/function-bind
-    to: backend/node_modules/function-bind
-    filter:
-      - "**/*"
-      - "!**/*.md"
-  - from: ../../node_modules/has-symbols
-    to: backend/node_modules/has-symbols
-    filter:
-      - "**/*"
-      - "!**/*.md"
-  - from: ../../node_modules/hasown
-    to: backend/node_modules/hasown
-    filter:
-      - "**/*"
-      - "!**/*.md"
-  - from: ../../node_modules/object-inspect
-    to: backend/node_modules/object-inspect
-    filter:
-      - "**/*"
-      - "!**/*.md"
-  - from: ../../node_modules/es-object-atoms
-    to: backend/node_modules/es-object-atoms
-    filter:
-      - "**/*"
-      - "!**/*.md"
-  - from: ../../node_modules/dunder-proto
-    to: backend/node_modules/dunder-proto
-    filter:
-      - "**/*"
-      - "!**/*.md"
-  - from: ../../node_modules/safer-buffer
-    to: backend/node_modules/safer-buffer
-    filter:
-      - "**/*"
-      - "!**/*.md"
-  - from: ../../node_modules/setprototypeof
-    to: backend/node_modules/setprototypeof
-    filter:
-      - "**/*"
-      - "!**/*.md"
-  - from: ../../node_modules/toidentifier
-    to: backend/node_modules/toidentifier
-    filter:
-      - "**/*"
-      - "!**/*.md"
-  - from: ../../node_modules/inherits
-    to: backend/node_modules/inherits
-    filter:
-      - "**/*"
-      - "!**/*.md"
-  - from: ../../node_modules/debug
-    to: backend/node_modules/debug
-    filter:
-      - "**/*"
-      - "!**/*.md"
-  - from: ../../node_modules/safe-buffer
-    to: backend/node_modules/safe-buffer
-    filter:
-      - "**/*"
-      - "!**/*.md"
+      - "!**/doc/**"
+      - "!**/test/**"
+      - "!**/tests/**"
+      - "!**/spec/**"
+      - "!**/specs/**"
+      - "!**/__tests__/**"
+      - "!**/__mocks__/**"
+      - "!**/example/**"
+      - "!**/examples/**"
+      - "!**/coverage/**"
+      - "!**/*.map"
+      - "!**/*.ts"
+      - "!**/*.tsx"
+      - "!**/*.d.ts"
+      # ========================================
+      # Excluir definiciones de tipos
+      # ========================================
+      - "!**/@types/**"
+      # ========================================
+      # Excluir paquetes del workspace
+      # ========================================
+      - "!**/@sistema/**"
+      # ========================================
+      # Excluir librerias de frontend (no usadas en backend)
+      # ========================================
+      - "!**/react/**"
+      - "!**/react-dom/**"
+      - "!**/react-redux/**"
+      - "!**/react-router/**"
+      - "!**/react-router-dom/**"
+      - "!**/react-hook-form/**"
+      - "!**/@vitejs/**"
+      - "!**/vite/**"
+      - "!**/@radix-ui/**"
+      - "!**/lucide-react/**"
+      - "!**/recharts/**"
+      - "!**/framer-motion/**"
+      - "!**/tailwindcss/**"
+      - "!**/postcss/**"
+      - "!**/autoprefixer/**"
+      - "!**/cmdk/**"
+      - "!**/sonner/**"
+      - "!**/next-themes/**"
+      - "!**/zustand/**"
+      - "!**/immer/**"
+      - "!**/redux/**"
+      - "!**/@reduxjs/**"
+      - "!**/@tanstack/**"
+      - "!**/class-variance-authority/**"
+      - "!**/clsx/**"
+      - "!**/tailwind-merge/**"
+      # ========================================
+      # Excluir herramientas de desarrollo y build
+      # ========================================
+      - "!**/typescript/**"
+      - "!**/ts-node/**"
+      - "!**/ts-node-dev/**"
+      - "!**/ts-loader/**"
+      - "!**/ts-jest/**"
+      - "!**/eslint/**"
+      - "!**/@eslint/**"
+      - "!**/@typescript-eslint/**"
+      - "!**/eslint-plugin-react/**"
+      - "!**/eslint-plugin-react-hooks/**"
+      - "!**/jest/**"
+      - "!**/@jest/**"
+      - "!**/vitest/**"
+      - "!**/@vitest/**"
+      - "!**/webpack/**"
+      - "!**/webpack-cli/**"
+      - "!**/@webpack-cli/**"
+      - "!**/webpack-node-externals/**"
+      - "!**/copy-webpack-plugin/**"
+      - "!**/babel/**"
+      - "!**/@babel/**"
+      - "!**/prettier/**"
+      - "!**/nodemon/**"
+      - "!**/rimraf/**"
+      - "!**/turbo/**"
+      - "!**/turbo-windows-64/**"
+      # ========================================
+      # Excluir electron-builder (ya se uso)
+      # ========================================
+      - "!**/electron-builder/**"
+      - "!**/electron-builder-squirrel-windows/**"
+      - "!**/app-builder-bin/**"
+      - "!**/app-builder-lib/**"
+      - "!**/7zip-bin/**"
+      - "!**/builder-util/**"
+      - "!**/builder-util-runtime/**"
+      - "!**/dmg-builder/**"
+      - "!**/electron-publish/**"
+      # ========================================
+      # Excluir frameworks no usados
+      # ========================================
+      - "!**/@angular/**"
+      - "!**/vue/**"
+      - "!**/svelte/**"
+      - "!**/preact/**"
+      # ========================================
+      # Binarios de otras plataformas
+      # ========================================
+      - "!**/android/**"
+      - "!**/ios/**"
+      - "!**/darwin/**"
+      - "!**/linux/**"
+      - "!**/*-linux-*/**"
+      - "!**/*-darwin-*/**"
+      - "!**/*-arm64*/**"
+      - "!**/.bin/**"
 
-# Configuración para Windows
 win:
   target:
     - target: nsis
       arch:
         - x64
   icon: build/icon.ico
-  # Solicitar permisos de administrador si es necesario
   requestedExecutionLevel: asInvoker
 
-# Configuración del instalador NSIS
 nsis:
   oneClick: false
   allowToChangeInstallationDirectory: true
@@ -397,29 +184,25 @@ nsis:
   createDesktopShortcut: true
   createStartMenuShortcut: true
   shortcutName: NexoPOS
-  # Ejecutar al finalizar instalación
   runAfterFinish: true
-  # Idioma español
   installerLanguages:
     - es_ES
     - en_US
 
-# Auto-actualización via GitHub Releases
 publish:
   - provider: github
     owner: AgustinAlbonico
     repo: sistema-gestion
     releaseType: release
 
-# Asar - empaquetado de archivos
 asar: true
 asarUnpack:
-  # Desempaquetar archivos que necesitan acceso directo
   - "**/*.node"
   - "**/node_modules/puppeteer/**/*"
 
-# Comprimir archivos
-compression: normal
+# Compresión 'store' = sin compresión = instalación MUCHO más rápida
+# El instalador será más grande pero la instalación será instantánea
+compression: store
 
-# Detectar y remover node_modules innecesarios
-removePackageScripts: true
+# Deshabilitar differential package para evitar procesamiento extra
+npmRebuild: false

@@ -102,7 +102,26 @@ export class PdfGeneratorService {
      */
     private loadTemplates(): void {
         try {
-            const assetsPath = path.join(__dirname, '../../..', 'assets');
+            // En producción (bundle), __dirname apunta donde está main.js
+            // Los assets están en ./assets/ relativo a main.js
+            // En desarrollo, __dirname es el directorio del archivo .ts compilado
+            let assetsPath: string;
+
+            // Primero intentamos la ruta de producción (bundle)
+            const prodAssetsPath = path.join(__dirname, 'assets');
+            const devAssetsPath = path.join(__dirname, '../../..', 'assets');
+
+            if (fs.existsSync(path.join(prodAssetsPath, 'factura-c.html'))) {
+                assetsPath = prodAssetsPath;
+                this.logger.log(`Usando assets de producción: ${assetsPath}`);
+            } else if (fs.existsSync(path.join(devAssetsPath, 'factura-c.html'))) {
+                assetsPath = devAssetsPath;
+                this.logger.log(`Usando assets de desarrollo: ${assetsPath}`);
+            } else {
+                this.logger.error('No se encontró la carpeta de assets en ninguna ubicación');
+                this.logger.error(`Buscado en: ${prodAssetsPath} y ${devAssetsPath}`);
+                return;
+            }
 
             // Template Factura C (default, también usado para A y B)
             const templateCPath = path.join(assetsPath, 'factura-c.html');

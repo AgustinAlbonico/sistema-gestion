@@ -35,12 +35,12 @@
             border-radius: 1rem;
             box-shadow: 0 4px 6px -1px rgb(0 0 0 / 0.1);
             width: 100%;
-            max-width: 400px;
+            max-width: 420px;
         }
 
         .header {
             text-align: center;
-            margin-bottom: 2rem;
+            margin-bottom: 1.5rem;
         }
 
         .logo {
@@ -134,82 +134,132 @@
             display: block;
         }
 
-        .hidden {
-            display: none;
+        .mode-selector {
+            background: #f1f5f9;
+            padding: 0.75rem;
+            border-radius: 0.5rem;
+            display: flex;
+            gap: 0.5rem;
+            margin-bottom: 1.5rem;
+        }
+
+        .mode-btn {
+            flex: 1;
+            padding: 0.75rem 0.5rem;
+            background: transparent;
+            border: 2px solid transparent;
+            border-radius: 0.375rem;
+            font-size: 0.875rem;
+            font-weight: 500;
+            cursor: pointer;
+            transition: all 0.2s;
+            color: var(--text-muted);
+        }
+
+        .mode-btn:hover {
+            background: rgba(255, 255, 255, 0.5);
+        }
+
+        .mode-btn.active {
+            background: white;
+            border-color: var(--primary);
+            color: var(--primary);
+            box-shadow: 0 1px 3px rgba(0, 0, 0, 0.1);
+        }
+
+        .mode-description {
+            font-size: 0.75rem;
+            color: var(--text-muted);
+            text-align: center;
+            margin-bottom: 1rem;
+            padding: 0.5rem;
+            background: #f8fafc;
+            border-radius: 0.25rem;
+        }
+
+        .divider {
+            display: flex;
+            align-items: center;
+            margin: 1rem 0;
+        }
+
+        .divider::before,
+        .divider::after {
+            content: "";
+            flex: 1;
+            border-bottom: 1px solid var(--border);
+        }
+
+        .divider span {
+            padding: 0 0.75rem;
+            color: var(--text-muted);
+            font-size: 0.75rem;
         }
     </style>
 </head>
 
 <body>
-    <div class="container" id="connection-step">
+    <div class="container">
         <div class="header">
             <div class="logo">NexoPOS</div>
             <div class="subtitle">Configuración Inicial</div>
         </div>
 
+        <!-- Selector de Tipo de PC -->
+        <div class="mode-selector">
+            <button type="button" class="mode-btn active" id="mode-principal">
+                🖥️ PC Principal
+            </button>
+            <button type="button" class="mode-btn" id="mode-terminal">
+                💻 Terminal Adicional
+            </button>
+        </div>
+
+        <div class="mode-description" id="mode-desc">
+            Esta PC tiene PostgreSQL instalado localmente
+        </div>
+
         <form id="db-form">
-            <!-- Selector de Modo -->
-            <div class="form-group"
-                style="background: #f1f5f9; padding: 1rem; border-radius: 0.5rem; display: flex; gap: 1rem; justify-content: center; margin-bottom: 1.5rem;">
-                <label style="margin: 0; display: flex; align-items: center; cursor: pointer;">
-                    <input type="radio" name="mode" value="server" checked style="width: auto; margin-right: 0.5rem;">
-                    Modo Servidor
-                </label>
-                <label style="margin: 0; display: flex; align-items: center; cursor: pointer;">
-                    <input type="radio" name="mode" value="client" style="width: auto; margin-right: 0.5rem;">
-                    Modo Cliente
-                </label>
+            <div class="form-group">
+                <label for="host">Servidor PostgreSQL</label>
+                <input type="text" id="host" name="host" value="localhost" required>
             </div>
 
-            <!-- Campos MODO SERVIDOR -->
-            <div id="server-fields">
-                <div class="form-group">
-                    <label for="host">Servidor BD (Host)</label>
-                    <input type="text" id="host" name="host" value="localhost" required>
-                </div>
-
-                <div class="form-group">
-                    <label for="port">Puerto BD</label>
-                    <input type="number" id="port" name="port" value="5432" required>
-                </div>
-
-                <div class="form-group">
-                    <label for="database">Base de Datos</label>
-                    <input type="text" id="database" name="database" value="nexopos" required>
-                </div>
-
-                <div class="form-group">
-                    <label for="username">Usuario BD</label>
-                    <input type="text" id="username" name="username" value="postgres" required>
-                </div>
-
-                <div class="form-group">
-                    <label for="password">Contraseña BD</label>
-                    <input type="password" id="password" name="password" required>
-                </div>
-
-                <div class="form-group">
-                    <label for="jwtSecret">Token Secreto (JWT)</label>
-                    <input type="text" id="jwtSecret" name="jwtSecret"
-                        placeholder="Escribe una clave segura o genera una" required>
-                    <button type="button" id="generate-jwt"
-                        style="margin-top: 0.5rem; font-size: 0.8rem; padding: 0.5rem; background: #64748b; color: white; border: none; border-radius: 4px; cursor: pointer;">Generar
-                        Automático</button>
-                </div>
+            <div class="form-group">
+                <label for="port">Puerto</label>
+                <input type="number" id="port" name="port" value="5432" required>
             </div>
 
-            <!-- Campos MODO CLIENTE -->
-            <div id="client-fields" class="hidden">
-                <div class="form-group">
-                    <label for="serverIp">IP del Servidor Principal</label>
-                    <input type="text" id="serverIp" name="serverIp" placeholder="Ej: 192.168.1.100">
-                    <small style="color: var(--text-muted); display: block; margin-top: 0.25rem;">La PC donde instalaste
-                        el Modo Servidor</small>
-                </div>
+            <div class="form-group">
+                <label for="database">Base de Datos</label>
+                <input type="text" id="database" name="database" value="nexopos" required>
+            </div>
+
+            <div class="divider"><span>Credenciales</span></div>
+
+            <div class="form-group">
+                <label for="username">Usuario</label>
+                <input type="text" id="username" name="username" value="postgres" required>
+            </div>
+
+            <div class="form-group">
+                <label for="password">Contraseña</label>
+                <input type="password" id="password" name="password" required>
+            </div>
+
+            <div class="divider"><span>Seguridad</span></div>
+
+            <div class="form-group">
+                <label for="jwtSecret">Token Secreto (JWT)</label>
+                <input type="text" id="jwtSecret" name="jwtSecret" placeholder="Clave segura para tokens" required>
+                <button type="button" id="generate-jwt"
+                    style="margin-top: 0.5rem; font-size: 0.8rem; padding: 0.5rem; background: #64748b; color: white; border: none; border-radius: 4px; cursor: pointer;">
+                    Generar Automático
+                </button>
             </div>
 
             <button type="submit" id="connect-btn" class="btn-primary">
-                Conectar y Guardar
+                Probar Conexión y Guardar
             </button>
         </form>
 
@@ -224,34 +274,27 @@
         const statusDiv = document.getElementById('status');
         const jwtInput = document.getElementById('jwtSecret');
         const generateJwtBtn = document.getElementById('generate-jwt');
-        const modeInputs = document.getElementsByName('mode');
-        const serverFields = document.getElementById('server-fields');
-        const clientFields = document.getElementById('client-fields');
-        const serverIpInput = document.getElementById('serverIp');
+        const hostInput = document.getElementById('host');
 
-        // Manejo de cambio de modo
-        modeInputs.forEach(input => {
-            input.addEventListener('change', (e) => {
-                if (e.target.value === 'client') {
-                    serverFields.classList.add('hidden');
-                    clientFields.classList.remove('hidden');
-                    // Ajustar requeridos
-                    serverIpInput.required = true;
-                    document.getElementById('host').required = false;
-                    document.getElementById('username').required = false;
-                    document.getElementById('password').required = false;
-                    document.getElementById('jwtSecret').required = false;
-                } else {
-                    serverFields.classList.remove('hidden');
-                    clientFields.classList.add('hidden');
-                    // Resetaur requeridos
-                    serverIpInput.required = false;
-                    document.getElementById('host').required = true;
-                    document.getElementById('username').required = true;
-                    document.getElementById('password').required = true;
-                    document.getElementById('jwtSecret').required = true;
-                }
-            });
+        const modePrincipalBtn = document.getElementById('mode-principal');
+        const modeTerminalBtn = document.getElementById('mode-terminal');
+        const modeDesc = document.getElementById('mode-desc');
+
+        // Cambio de modo (solo cambia el texto de ayuda y el valor por defecto del host)
+        modePrincipalBtn.addEventListener('click', () => {
+            modePrincipalBtn.classList.add('active');
+            modeTerminalBtn.classList.remove('active');
+            modeDesc.textContent = 'Esta PC tiene PostgreSQL instalado localmente';
+            hostInput.value = 'localhost';
+            hostInput.placeholder = 'localhost';
+        });
+
+        modeTerminalBtn.addEventListener('click', () => {
+            modeTerminalBtn.classList.add('active');
+            modePrincipalBtn.classList.remove('active');
+            modeDesc.textContent = 'Se conectará a PostgreSQL en otra PC de la red';
+            hostInput.value = '';
+            hostInput.placeholder = 'Ej: 192.168.1.100';
         });
 
         // Generar JWT aleatorio
@@ -269,26 +312,14 @@
             statusDiv.className = 'status-message';
             statusDiv.textContent = '';
 
-            const mode = document.querySelector('input[name="mode"]:checked').value;
-            let config = { mode };
-
-            if (mode === 'server') {
-                config = {
-                    ...config,
-                    host: form.host.value,
-                    port: Number(form.port.value),
-                    database: form.database.value,
-                    username: form.username.value,
-                    password: form.password.value,
-                    jwtSecret: form.jwtSecret.value,
-                };
-            } else {
-                config = {
-                    ...config,
-                    serverIp: form.serverIp.value,
-                    backendPort: 3000 // Fijo por ahora
-                };
-            }
+            const config = {
+                host: form.host.value,
+                port: Number(form.port.value),
+                database: form.database.value,
+                username: form.username.value,
+                password: form.password.value,
+                jwtSecret: form.jwtSecret.value,
+            };
 
             try {
                 // Enviar datos al proceso principal para probar y guardar
@@ -308,7 +339,7 @@
                 statusDiv.innerHTML = (error.message || 'Error al conectar').replace(/\n/g, '<br>');
                 statusDiv.classList.add('status-error');
                 connectBtn.disabled = false;
-                connectBtn.textContent = 'Conectar y Guardar';
+                connectBtn.textContent = 'Probar Conexión y Guardar';
             }
         });
     </script>

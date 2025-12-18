@@ -42,96 +42,29 @@ export function createSetupWizard(onSuccess: () => void) {
     });
 
     // Manejar intento de conexión y guardado
+    // Ahora solo hay un modo: conectar a PostgreSQL (puede ser local o remoto)
     ipcMain.handle('setup-database', async (_, config) => {
-        const isClientMode = config.mode === 'client';
+        const client = new Client({
+            host: config.host,
+            port: config.port,
+            database: config.database,
+            user: config.username,
+            password: config.password,
+            connectionTimeoutMillis: 10000,
+        });
 
-        if (isClientMode) {
-            // --- MODO CLIENTE ---
-            const backendUrl = `http://${config.serverIp}:${config.backendPort || 3000}`;
-            console.log(`[Setup] Probando conexión a backend: ${backendUrl}`);
+        try {
+            console.log(`[Setup] Probando conexión a PostgreSQL: ${config.host}:${config.port}`);
+            await client.connect();
+            await client.query('SELECT 1'); // Test query
+            await client.end();
+            console.log('[Setup] Conexión exitosa a PostgreSQL');
 
-            try {
-                // Probar conexión HTTP al backend con timeout de 10 segundos
-                const controller = new AbortController();
-                const timeoutId = setTimeout(() => controller.abort(), 10000);
-
-                const response = await fetch(`${backendUrl}/api/health`, {
-                    signal: controller.signal,
-                    method: 'GET',
-                });
-
-                clearTimeout(timeoutId);
-
-                if (!response.ok) {
-                    throw new Error(`El servidor respondió con estado HTTP ${response.status}`);
-                }
-
-                console.log('[Setup] Conexión exitosa a backend remoto');
-
-                // Guardar configuración CLIENTE en .env
-                const envContent = `
-# Configuración GENERADA por Setup Wizard (MODO CLIENTE)
-MODE=CLIENT
-BACKEND_URL=${backendUrl}
-FRONTEND_PORT=5173
-NODE_ENV=production
-      `.trim();
-
-                // Ruta del archivo .env
-                // En desarrollo: carpeta desktop
-                // En producción: junto al ejecutable (consistente con main.ts)
-                const envPath = isDev
-                    ? path.join(__dirname, '../../.env')
-                    : path.join(path.dirname(app.getPath('exe')), '.env');
-
-                console.log(`[Setup] Guardando .env CLIENTE en: ${envPath}`);
-                await fs.writeFile(envPath, envContent);
-
-                return { success: true };
-
-            } catch (error: any) {
-                console.error('[Setup] Error conexión cliente:', error);
-
-                // Mensajes de error más descriptivos
-                let errorMessage = 'Error de conexión desconocido';
-
-                if (error.name === 'AbortError' || error.message?.includes('abort')) {
-                    errorMessage = `Tiempo de espera agotado. Verificá que:\n• La PC servidor esté encendida y con la app abierta\n• La IP "${config.serverIp}" sea correcta\n• El puerto 3000 esté permitido en el firewall del servidor`;
-                } else if (error.cause?.code === 'ECONNREFUSED' || error.message?.includes('ECONNREFUSED')) {
-                    errorMessage = `Conexión rechazada. El backend no está corriendo en ${config.serverIp}:3000\nVerificá que la app NexoPOS esté abierta en la PC servidor`;
-                } else if (error.cause?.code === 'ENOTFOUND' || error.message?.includes('ENOTFOUND')) {
-                    errorMessage = `No se encontró el servidor. Verificá la IP: ${config.serverIp}`;
-                } else if (error.cause?.code === 'ENETUNREACH' || error.message?.includes('ENETUNREACH')) {
-                    errorMessage = `Red inalcanzable. Las PCs no están en la misma red local`;
-                } else if (error.cause?.code === 'ETIMEDOUT' || error.message?.includes('ETIMEDOUT')) {
-                    errorMessage = `Tiempo agotado al conectar. Verificá el firewall del servidor (puerto 3000)`;
-                } else if (error.message) {
-                    errorMessage = error.message;
-                }
-
-                return { success: false, error: errorMessage };
-            }
-
-        } else {
-            // --- MODO SERVIDOR (PostgreSQL) ---
-            const client = new Client({
-                host: config.host,
-                port: config.port,
-                database: config.database,
-                user: config.username,
-                password: config.password,
-                connectionTimeoutMillis: 5000,
-            });
-
-            try {
-                await client.connect();
-                await client.query('SELECT 1'); // Test query
-                await client.end();
-
-                // Si conecta, guardar en .env
-                const envContent = `
-# Configuración GENERADA por Setup Wizard (MODO SERVIDOR)
-MODE=SERVER
+            // Guardar configuración en .env
+            // La única diferencia entre PC principal y terminal adicional es el DATABASE_HOST
+            const envContent = `
+# Configuración GENERADA por Setup Wizard
+# Host: ${config.host === 'localhost' ? 'BD Local (PC Principal)' : 'BD Remota (' + config.host + ')'}
 DATABASE_HOST=${config.host}
 DATABASE_PORT=${config.port}
 DATABASE_NAME=${config.database}
@@ -146,24 +79,39 @@ JWT_SECRET=${config.jwtSecret || Math.random().toString(36).substring(2, 15) + M
 JWT_EXPIRATION=36500d
       `.trim();
 
-                // Ruta del archivo .env
-                // En desarrollo: carpeta desktop
-                // En producción: junto al ejecutable (consistente con main.ts)
-                const envPath = isDev
-                    ? path.join(__dirname, '../../.env')
-                    : path.join(path.dirname(app.getPath('exe')), '.env');
+            // Ruta del archivo .env
+            // En desarrollo: carpeta desktop
+            // En producción: junto al ejecutable (consistente con main.ts)
+            const envPath = isDev
+                ? path.join(__dirname, '../../.env')
+                : path.join(path.dirname(app.getPath('exe')), '.env');
 
-                console.log(`[Setup] Guardando .env SERVIDOR en: ${envPath}`);
-                await fs.writeFile(envPath, envContent);
+            console.log(`[Setup] Guardando .env en: ${envPath}`);
+            await fs.writeFile(envPath, envContent);
 
-                return { success: true };
-            } catch (error: any) {
-                if (client) {
-                    try { await client.end(); } catch { }
-                }
-                console.error('Error de conexión:', error);
-                return { success: false, error: error.message || 'Error de conexión a Base de Datos' };
+            return { success: true };
+        } catch (error: any) {
+            if (client) {
+                try { await client.end(); } catch { }
             }
+            console.error('[Setup] Error de conexión:', error);
+
+            // Mensajes de error más descriptivos
+            let errorMessage = error.message || 'Error de conexión a Base de Datos';
+
+            if (error.code === 'ECONNREFUSED') {
+                errorMessage = `Conexión rechazada. PostgreSQL no está corriendo en ${config.host}:${config.port}\n\nVerificá que:\n• PostgreSQL esté instalado y corriendo\n• El puerto ${config.port} esté abierto en el firewall`;
+            } else if (error.code === 'ENOTFOUND') {
+                errorMessage = `No se encontró el servidor: ${config.host}\nVerificá la IP o nombre de host`;
+            } else if (error.code === 'ETIMEDOUT') {
+                errorMessage = `Tiempo agotado al conectar a ${config.host}:${config.port}\n\nVerificá que:\n• La IP sea correcta\n• El puerto 5432 esté abierto en el firewall del servidor\n• PostgreSQL acepte conexiones remotas (pg_hba.conf)`;
+            } else if (error.message?.includes('password authentication failed')) {
+                errorMessage = 'Contraseña incorrecta para el usuario especificado';
+            } else if (error.message?.includes('database') && error.message?.includes('does not exist')) {
+                errorMessage = `La base de datos "${config.database}" no existe.\n\nCreala con: createdb -U postgres ${config.database}`;
+            }
+
+            return { success: false, error: errorMessage };
         }
     });
 

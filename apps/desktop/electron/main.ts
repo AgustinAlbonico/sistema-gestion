@@ -693,23 +693,17 @@ app.whenReady().then(async () => {
         const envVars = loadExternalEnv();
         log.info('[Electron] Variables de entorno cargadas: ' + Object.keys(envVars).join(', '));
 
-        // 2. Determinar Modo
-        const mode = envVars.MODE || process.env.MODE || 'SERVER';
-        const isClientMode = mode === 'CLIENT';
-        log.info(`[Electron] Modo detectado: ${mode}, isClientMode: ${isClientMode}`);
-
-        // 3. Verificar si hay configuración válida
+        // 2. Verificar si hay configuración de BD válida
         const hasDbConfig = envVars.DATABASE_HOST || process.env.DATABASE_HOST;
-        const hasClientConfig = isClientMode && (envVars.BACKEND_URL || process.env.BACKEND_URL);
-        log.info(`[Electron] hasDbConfig: ${!!hasDbConfig}, hasClientConfig: ${!!hasClientConfig}`);
+        log.info(`[Electron] hasDbConfig: ${!!hasDbConfig}`);
 
-        // Si es Server y no tiene DB, o es Client y no tiene URL -> Wizard
-        const needsWizard = isClientMode ? !hasClientConfig : !hasDbConfig;
+        // Si no hay configuración de BD -> Wizard
+        const needsWizard = !hasDbConfig;
         log.info(`[Electron] needsWizard: ${needsWizard}`);
 
         // Si necesitamos configuración, abrir el wizard
         if (needsWizard) {
-            log.info('[Electron] No se encontró configuración válida. Abriendo Setup Wizard...');
+            log.info('[Electron] No se encontró configuración de BD. Abriendo Setup Wizard...');
             loadingScreen.close();
 
             // eslint-disable-next-line @typescript-eslint/no-var-requires
@@ -723,25 +717,19 @@ app.whenReady().then(async () => {
             return;
         }
 
-        // 4. Iniciar el backend (SOLO SI ES MODO SERVIDOR)
-        if (!isClientMode) {
-            log.info('[Electron] Iniciando backend LOCAL...');
-            await startBackend();
-            log.info('[Electron] Backend iniciado');
+        // 3. Iniciar el backend LOCAL (siempre se inicia, conecta a BD local o remota según .env)
+        log.info('[Electron] Iniciando backend LOCAL...');
+        await startBackend();
+        log.info('[Electron] Backend iniciado');
 
-            // Pequeña pausa para asegurar que el backend está completamente listo
-            await new Promise(resolve => setTimeout(resolve, 1000));
-        } else {
-            log.info('[Electron] Modo CLIENTE detectado. Saltando inicio de backend local.');
-        }
+        // Pequeña pausa para asegurar que el backend está completamente listo
+        await new Promise(resolve => setTimeout(resolve, 1000));
 
         // Cerrar pantalla de carga
         loadingScreen.close();
 
-        // 5. Determinar API URL
-        const apiUrl = isClientMode
-            ? (envVars.BACKEND_URL || process.env.BACKEND_URL)
-            : `http://localhost:${BACKEND_PORT}`;
+        // 4. API URL siempre es localhost (el backend corre localmente)
+        const apiUrl = `http://localhost:${BACKEND_PORT}`;
 
         log.info(`[Electron] API URL configurada: ${apiUrl}`);
 
