@@ -1,122 +1,277 @@
-# Instructivo de Instalación y Configuración - NexoPOS
+# Guía de Instalación - NexoPOS
 
-Este documento detalla los pasos para instalar el sistema NexoPOS en un entorno de producción (PCS de clientes), cubriendo desde la instalación del motor de base de datos hasta la configuración de terminales cliente.
+Guía completa para instalar el sistema NexoPOS en equipos de clientes.
 
-## 1. Requisitos Previos (PC SERVIDOR)
+---
 
-El "Servidor" es la PC donde se almacenarán los datos. Debe estar encendida para que las demás (Clientes) puedan usar el sistema.
+## Arquitectura del Sistema
 
-### Instalación de PostgreSQL
-El sistema utiliza PostgreSQL como base de datos.
-
-1.  **Descargar**: Ir a [Descargar PostgreSQL para Windows](https://www.enterprisedb.com/downloads/postgres-postgresql-downloads).
-2.  **Instalar**: Ejecutar el instalador.
-    *   Puede desmarcar "pgAdmin 4" y "Stack Builder" si desea una instalación más ligera (solo necesita "PostgreSQL Server" y "Command Line Tools").
-    *   **Importante**: Recordar la contraseña que asigne al superusuario `postgres`. (Recomendada para facilitar soporte: `postgres` o `admin`).
-    *   Puerto por defecto: `5432` (dejar tal cual).
-
-### Crear Base de Datos
-Es necesario crear la base de datos vacía antes de instalar el sistema. Se puede hacer vía línea de comandos (CMD o PowerShell).
-
-1.  Abrir CMD o PowerShell.
-2.  Ir a la carpeta `bin` de Postgres (generalmente `C:\Program Files\PostgreSQL\16\bin` o la versión que haya instalado).
-3.  Ejecutar el siguiente comando (pedirá la contraseña que configuró en la instalación):
-
-```powershell
-./createdb -U postgres nexopos
+```
+┌──────────────────────────────────────────────────────────────────┐
+│                         PC SERVIDOR                               │
+│  ┌─────────────┐                                                  │
+│  │ PostgreSQL  │ ◄─── Las terminales se conectan a esta BD       │
+│  │   (BD)      │      Puerto: 5432                                │
+│  └─────────────┘                                                  │
+│                                                                    │
+│  ┌─────────────┐                                                  │
+│  │  NexoPOS    │      (Opcional - puede estar cerrada)            │
+│  │   (App)     │                                                  │
+│  └─────────────┘                                                  │
+└──────────────────────────────────────────────────────────────────┘
+        ▲                            ▲
+        │ Conexión a BD              │ Conexión a BD
+        │ (localhost:5432)           │ (IP_SERVIDOR:5432)
+        │                            │
+┌───────┴───────┐            ┌───────┴───────┐
+│  PC SERVIDOR  │            │   PC CLIENTE  │
+│   (NexoPOS)   │            │   (NexoPOS)   │
+│ Backend local │            │ Backend local │
+└───────────────┘            └───────────────┘
 ```
 
-*Si el comando falla porque no encuentra `createdb`, asegúrese de estar en la carpeta `bin` correcta.*
+> **Ventaja**: Cada PC corre su propia instancia de NexoPOS. Solo necesitan que PostgreSQL esté corriendo en el servidor (no necesitan que la app esté abierta).
 
 ---
 
-## 2. Instalación del Sistema (PC SERVIDOR)
+## 1. Instalación del Servidor (PC Principal)
 
-Una vez instalada la base de datos, procedemos a instalar la aplicación.
+### 1.1 Instalar PostgreSQL
 
-1.  **Ejecutar Instalador**: Correr `NexoPOS Setup.exe` en la PC Servidor.
-2.  **Abrir Aplicación**: Al finalizar, abrir "NexoPOS".
-3.  **Asistente de Configuración**:
-    *   La primera vez, el sistema detectará que no está configurado y abrirá una ventana de "Configuración Inicial".
-    *   Seleccionar **Modo Servidor**.
-4.  **Datos de Conexión**:
-    *   **Host**: `localhost` (o `127.0.0.1`)
-    *   **Puerto**: `5432`
-    *   **Base de Datos**: `nexopos`
-    *   **Usuario**: `postgres` (o el que haya definido)
-    *   **Contraseña**: La que definió al instalar Postgres.
-5.  **Finalizar**:
-    *   Dar clic en "Guardar y Conectar".
-    *   Si los datos son correctos, el sistema guardará el archivo `.env`, creará las tablas automáticamente y reiniciará la aplicación.
+1. **Descargar** desde [postgresql.org](https://www.enterprisedb.com/downloads/postgres-postgresql-downloads) (versión 18).
 
-### Firewall (Importante para Clientes)
-Para que otras PCs puedan conectarse a este servidor:
-1.  Abrir "Firewall de Windows con seguridad avanzada".
-2.  Crear una **Regla de Entrada**:
-    *   Tipo: **Puerto**.
-    *   Protocolo: **TCP**.
-    *   Puertos específicos: `3000`.
-    *   Acción: **Permitir la conexión**.
-    *   Nombre: `NexoPOS Backend`.
+2. **Ejecutar instalador**:
+   - Componentes: solo necesita "PostgreSQL Server" y "Command Line Tools"
+   - **Usuario**: `postgres`
+   - **Contraseña**: definir una segura (ej: `NexoPOS2024!`)
+   - **Puerto**: `5432` (dejar por defecto)
+   - **Configuración regional**: `es-AR`
+
+### 1.2 Crear Base de Datos
+
+Abrir **PowerShell** y ejecutar:
+
+```powershell
+cd "C:\Program Files\PostgreSQL\18\bin"
+.\createdb -U postgres nexopos
+```
+
+> Se pedirá la contraseña de PostgreSQL.
+
+### 1.3 Configurar PostgreSQL para Conexiones Remotas
+
+> [!IMPORTANT]  
+> Este paso es **obligatorio** si habrá terminales cliente conectándose desde otras PCs.
+
+#### Paso A: Modificar `postgresql.conf`
+
+1. Abrir el archivo:
+   ```
+   C:\Program Files\PostgreSQL\18\data\postgresql.conf
+   ```
+
+2. Buscar la línea `listen_addresses` y cambiarla a:
+   ```
+   listen_addresses = '*'
+   ```
+   
+   > Nota: Si la línea está comentada (empieza con `#`), quitar el `#`.
+
+3. Guardar el archivo.
+
+#### Paso B: Modificar `pg_hba.conf`
+
+1. Abrir el archivo:
+   ```
+   C:\Program Files\PostgreSQL\18\data\pg_hba.conf
+   ```
+
+2. Agregar esta línea al final (antes de cualquier comentario):
+   ```
+   host    all    all    192.168.0.0/16    scram-sha-256
+   ```
+   
+   > Esto permite conexiones desde cualquier IP que empiece con `192.168.x.x` (red local típica).
+
+3. Guardar el archivo.
+
+#### Paso C: Reiniciar PostgreSQL
+
+Abrir **PowerShell como Administrador** y ejecutar:
+
+```powershell
+Restart-Service postgresql-x64-18
+```
+
+> Nota: El nombre del servicio puede variar según la versión. Usar `Get-Service *postgres*` para verificar.
+
+### 1.4 Configurar Firewall de Windows
+
+1. Abrir "**Firewall de Windows Defender con seguridad avanzada**"
+2. Ir a "**Reglas de entrada**" → "**Nueva regla...**"
+3. Configurar:
+   - Tipo: **Puerto**
+   - Protocolo: **TCP**
+   - Puerto: **5432**
+   - Acción: **Permitir la conexión**
+   - Perfil: marcar todos (Dominio, Privado, Público)
+   - Nombre: `PostgreSQL NexoPOS`
+
+### 1.5 Instalar NexoPOS en el Servidor
+
+1. Ejecutar `NexoPOS-Setup.exe`
+2. Al abrir la app, aparecerá el **Asistente de Configuración**
+3. Seleccionar "**PC Principal**" (o Modo Servidor)
+4. Completar datos:
+   - **Host**: `localhost`
+   - **Puerto**: `5432`
+   - **Base de datos**: `nexopos`
+   - **Usuario**: `postgres`
+   - **Contraseña**: (la que definiste)
+5. Clic en "**Probar conexión**" y luego "**Guardar**"
+
+La app creará las tablas automáticamente y estará lista para usar.
+
+### 1.6 Obtener IP del Servidor
+
+En **PowerShell** del servidor, ejecutar:
+
+```powershell
+ipconfig
+```
+
+Buscar la línea "**Dirección IPv4**" (ej: `192.168.1.100`). Anotar esta IP para las terminales cliente.
 
 ---
 
-## 3. Instalación de Terminales (PC CLIENTE)
+## 2. Instalación de Terminales Cliente
 
-Para las computadoras adicionales que se conectarán al servidor.
+> [!NOTE]  
+> Los clientes **NO necesitan** instalar PostgreSQL. Solo instalan NexoPOS y se conectan a la BD del servidor.
 
-1.  **Ejecutar Instalador**: Correr `NexoPOS Setup.exe` en la PC Cliente.
-2.  **Abrir Aplicación**: Abrir "NexoPOS".
-3.  **Asistente de Configuración**:
-    *   El sistema pedirá configuración.
-    *   Seleccionar **Modo Cliente**.
-4.  **Conexión al Servidor**:
-    *   **IP del Servidor**: Ingresar la dirección IP V4 de la PC Servidor (Ej: `192.168.1.45`).
-        *   *Para saber la IP del servidor: En la PC Servidor, abrir CMD y escribir `ipconfig`.*
-    *   **Puerto**: `3000` (por defecto).
-5.  **Finalizar**:
-    *   Clic en "Conectar".
-    *   El sistema verificará que puede ver al servidor. Si es exitoso, reiniciará y cargará la interfaz.
+### 2.1 Verificar Conectividad
+
+Antes de instalar, verificar que la PC cliente puede "ver" al servidor.
+
+Abrir **PowerShell** y ejecutar:
+
+```powershell
+Test-NetConnection -ComputerName 192.168.1.100 -Port 5432
+```
+
+> Reemplazar `192.168.1.100` con la IP real del servidor.
+
+Resultado esperado: `TcpTestSucceeded : True`
+
+Si falla:
+- Verificar que ambas PCs están en la misma red
+- Verificar el firewall del servidor (paso 1.4)
+- Verificar que PostgreSQL acepta conexiones remotas (pasos 1.3)
+
+### 2.2 Instalar NexoPOS
+
+1. Ejecutar `NexoPOS-Setup.exe` en la PC cliente
+2. Al abrir, aparecerá el **Asistente de Configuración**
+3. Seleccionar "**Terminal Adicional**" (o Modo Cliente)
+4. Completar datos:
+   - **Host**: `192.168.1.100` (IP del servidor)
+   - **Puerto**: `5432`
+   - **Base de datos**: `nexopos`
+   - **Usuario**: `postgres`
+   - **Contraseña**: (la misma del servidor)
+5. Clic en "**Probar conexión**" y luego "**Guardar**"
+
+La app se conectará a la BD remota y estará lista para usar.
 
 ---
 
-## Resumen Técnico del Proceso
+## 3. Solución de Problemas
 
-1.  **Postgres**: Motor de BD. Se instala solo en SERVIDOR.
-2.  **BD Vacía**: Se crea `nexopos`.
-3.  **App Server**: Se conecta a la BD local. Al iniciar, **NexoPOS crea el esquema de tablas automáticamente**.
-4.  **Red**: Se abre puerto 3000 en firewall del Servidor.
-5.  **App Cliente**: Se conecta por HTTP (`http://IP_SERVIDOR:3000`) al backend del servidor.
+### Error: "Connection refused" o "No se puede conectar"
 
-## Solución de Problemas Comunes
+1. **Verificar que PostgreSQL está corriendo** en el servidor:
+   ```powershell
+   Get-Service *postgres*
+   ```
+   Estado debe ser "Running".
 
-*   **Error "Connection Refused" en Cliente**:
-    *   Verificar que la app NexoPOS esté abierta en el Servidor (debe estar corriendo para servir a los clientes).
-    *   Verificar Firewall de Windows en el Servidor (Puerto 3000 debe estar abierto).
-    *   Verificar que la IP sea correcta y ambas PCs estén en la misma red.
+2. **Verificar firewall** del servidor (puerto 5432 abierto).
 
-*   **Error "Identificación fallida" en Setup Servidor**:
-    *   La contraseña de PostgreSQL es incorrecta.
+3. **Verificar `pg_hba.conf`** - la IP del cliente debe estar permitida.
 
-*   **Error "La base de datos no existe"**:
-    *   Olvidó ejecutar el comando `createdb`.
+4. **Verificar `postgresql.conf`** - `listen_addresses = '*'`.
+
+### Error: "Identificación fallida / Password authentication failed"
+
+- La contraseña de PostgreSQL es incorrecta.
+- El usuario no es `postgres` o se escribió mal.
+
+### Error: "La base de datos no existe"
+
+- No se ejecutó el comando `createdb`.
+- El nombre de la BD es distinto (verificar mayúsculas/minúsculas).
+
+### La terminal cliente no sincroniza datos
+
+- Verificar que apunta a la misma BD que el servidor.
+- Refrescar la página/pantalla para ver cambios recientes.
 
 ---
 
-## Gestión Remota y Baja del Servicio
+## 4. Gestión Remota
 
-Si es necesario dar de baja el acceso al sistema remotamente (ej. falta de pago), se puede hacer modificando directamente la base de datos.
-Esta acción bloqueará el acceso a todos los usuarios inmediatamente, mostrando una pantalla de bloqueo.
+### Baja del Servicio (bloquear acceso)
 
-1.  **Acceso Remoto**: Conectarse por VPN o Escritorio Remoto a la PC Servidor.
-2.  **Abrir Consola SQL**: Usar CMD/PowerShell en la carpeta `bin` de Postgres:
-    ```powershell
-    ./psql -U postgres -d nexopos
-    ```
-3.  **Ejecutar Query de Bloqueo**:
-    ```sql
-    UPDATE "system_configuration" 
-    SET "sistemaHabilitado" = false, 
-        "mensajeDeshabilitado" = 'SERVICIO SUSPENDIDO - CONTACTE A SOPORTE TÉCNICO';
-    ```
-    *(Para reactivar, cambiar `false` por `true`)*.
+Si necesitás deshabilitar el sistema remotamente:
+
+1. Conectarte a la PC servidor (VPN, AnyDesk, TeamViewer, etc.)
+2. Abrir PowerShell y ejecutar:
+   ```powershell
+   cd "C:\Program Files\PostgreSQL\18\bin"
+   .\psql -U postgres -d nexopos -c "UPDATE system_configuration SET \"sistemaHabilitado\" = false, \"mensajeDeshabilitado\" = 'Servicio suspendido - Contacte a soporte';"
+   ```
+
+Para reactivar:
+```powershell
+.\psql -U postgres -d nexopos -c "UPDATE system_configuration SET \"sistemaHabilitado\" = true;"
+```
+
+### Backup de la Base de Datos
+
+```powershell
+cd "C:\Program Files\PostgreSQL\18\bin"
+.\pg_dump -U postgres -F c -f "C:\Backups\nexopos_backup.dump" nexopos
+```
+
+> Crear la carpeta `C:\Backups` previamente.
+
+---
+
+## 5. Checklist de Instalación
+
+### PC Servidor
+- [ ] PostgreSQL instalado
+- [ ] Base de datos `nexopos` creada
+- [ ] `postgresql.conf` → `listen_addresses = '*'`
+- [ ] `pg_hba.conf` → regla para red local agregada
+- [ ] Servicio PostgreSQL reiniciado
+- [ ] Firewall → puerto 5432 abierto
+- [ ] NexoPOS instalado y configurado
+- [ ] IP del servidor anotada
+
+### PC Cliente (cada terminal)
+- [ ] Conectividad verificada con `Test-NetConnection`
+- [ ] NexoPOS instalado
+- [ ] Configurado con IP del servidor y credenciales de BD
+
+---
+
+## 6. Datos de Acceso por Defecto
+
+| Campo | Valor |
+|-------|-------|
+| **Usuario inicial** | `admin` |
+| **Contraseña inicial** | `Admin123` |
+
+> [!WARNING]  
+> Cambiar la contraseña del usuario `admin` después del primer inicio de sesión.

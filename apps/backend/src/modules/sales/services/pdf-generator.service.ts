@@ -219,7 +219,7 @@ export class PdfGeneratorService {
                 // Si es tipo 99 (Sin Identificar) o el número es 0 o -, no enviamos documentNumber
                 // para que el template pueda mostrar "Sin Identificar" correctamente
                 documentNumber: this.isValidDocumentNumber(invoice.receiverDocumentType, invoice.receiverDocumentNumber)
-                    ? (invoice.receiverDocumentNumber ?? '')
+                    ? this.formatDocumentNumber(invoice.receiverDocumentType, invoice.receiverDocumentNumber ?? '')
                     : '',
                 name: invoice.receiverName || 'Consumidor Final',
                 address: invoice.receiverAddress || '-',
@@ -375,13 +375,28 @@ export class PdfGeneratorService {
     }
 
     /**
+     * Formatea número de documento según tipo
+     * CUIT/CUIL: XX-XXXXXXXX-X
+     * Otros: se devuelven sin cambios
+     */
+    private formatDocumentNumber(docType: number, docNumber: string): string {
+        // Códigos AFIP: 80 = CUIT, 86 = CUIL
+        if ((docType === 80 || docType === 86) && docNumber.length === 11) {
+            return `${docNumber.slice(0, 2)}-${docNumber.slice(2, 10)}-${docNumber.slice(10)}`;
+        }
+        return docNumber;
+    }
+
+    /**
      * Formatea fecha a DD/MM/YYYY
+     * Usa UTC para evitar desfase por zona horaria
      */
     private formatDate(date: Date): string {
         const d = new Date(date);
-        const day = String(d.getDate()).padStart(2, '0');
-        const month = String(d.getMonth() + 1).padStart(2, '0');
-        const year = d.getFullYear();
+        // Usar UTC para evitar que la zona horaria local reste un día
+        const day = String(d.getUTCDate()).padStart(2, '0');
+        const month = String(d.getUTCMonth() + 1).padStart(2, '0');
+        const year = d.getUTCFullYear();
         return `${day}/${month}/${year}`;
     }
 

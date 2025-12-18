@@ -8,16 +8,55 @@ import log from 'electron-log';
 // ============================================
 // CONFIGURACIÓN DE LOGS
 // ============================================
+
+/**
+ * Obtiene la ruta del archivo de logs y se asegura de que el directorio exista.
+ * NOTA: Esta función se ejecuta ANTES de que app.whenReady() se complete,
+ * por lo que no podemos usar app.getPath('userData'). Usamos rutas absolutas.
+ */
+function getLogPath(): string {
+    let logPath: string;
+
+    if (!app.isPackaged) {
+        // En desarrollo: logs/main.log en la raíz del proyecto desktop
+        logPath = path.join(__dirname, '../../logs/main.log');
+    } else {
+        // En producción: Construir la ruta manualmente porque app.getPath() 
+        // no funciona antes del evento 'ready'
+        // Windows: %APPDATA%/NexoPOS/logs/main.log
+        // Linux: ~/.config/NexoPOS/logs/main.log
+        // macOS: ~/Library/Application Support/NexoPOS/logs/main.log
+        const appName = 'NexoPOS';
+        let userDataDir: string;
+
+        if (process.platform === 'win32') {
+            userDataDir = path.join(process.env.APPDATA || '', appName);
+        } else if (process.platform === 'darwin') {
+            userDataDir = path.join(process.env.HOME || '', 'Library', 'Application Support', appName);
+        } else {
+            userDataDir = path.join(process.env.HOME || '', '.config', appName);
+        }
+
+        logPath = path.join(userDataDir, 'logs', 'main.log');
+    }
+
+    // Asegurar que el directorio de logs exista
+    const logDir = path.dirname(logPath);
+    try {
+        if (!fs.existsSync(logDir)) {
+            fs.mkdirSync(logDir, { recursive: true });
+        }
+    } catch (err) {
+        // Si falla la creación del directorio, loguear a stderr
+        process.stderr.write(`[Electron] Error creando directorio de logs: ${err}\n`);
+    }
+
+    return logPath;
+}
+
 log.transports.file.level = 'info';
 log.transports.console.level = 'info';
-log.transports.file.resolvePathFn = () => {
-    // En desarrollo: logs/main.log en la raíz del proyecto
-    // En producción: %APPDATA%/NexoPOS/logs/main.log
-    if (!app.isPackaged) {
-        return path.join(__dirname, '../../logs/main.log');
-    }
-    return path.join(app.getPath('userData'), 'logs/main.log');
-};
+log.transports.file.resolvePathFn = getLogPath;
 
 // Capturar errores no manejados
 log.catchErrors();
@@ -517,14 +556,7 @@ function setupAutoUpdater(): void {
 
     log.info('[Electron] Configurando auto-updater...');
 
-    // Verificar actualizaciones al iniciar
-    try {
-        autoUpdater.checkForUpdatesAndNotify();
-    } catch (e) {
-        log.error('[AutoUpdater] Error al buscar actualizaciones:', e);
-    }
-
-    // Eventos del actualizador
+    // Eventos del actualizador (configurar ANTES de checkForUpdates)
     autoUpdater.on('checking-for-update', () => {
         log.info('[AutoUpdater] Buscando actualizaciones...');
     });
@@ -565,7 +597,22 @@ function setupAutoUpdater(): void {
     });
 
     autoUpdater.on('error', (error) => {
+        // Ignorar el error de "No published versions" - es normal cuando no hay releases
+        if (error?.message?.includes('No published versions')) {
+            log.info('[AutoUpdater] No hay versiones publicadas en GitHub todavía');
+            return;
+        }
         log.error('[AutoUpdater] Error:', error);
+    });
+
+    // Verificar actualizaciones al iniciar (con manejo de errores para promesa)
+    autoUpdater.checkForUpdatesAndNotify().catch((err) => {
+        // Ignorar errores de "No published versions" - es normal cuando no hay releases
+        if (err?.message?.includes('No published versions')) {
+            log.info('[AutoUpdater] No hay versiones publicadas en GitHub todavía');
+            return;
+        }
+        log.error('[AutoUpdater] Error al buscar actualizaciones:', err);
     });
 }
 

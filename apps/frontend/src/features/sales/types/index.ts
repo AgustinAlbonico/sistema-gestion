@@ -189,6 +189,7 @@ export interface CreateSaleDTO {
     items: CreateSaleItemDTO[];
     payments?: CreateSalePaymentDTO[];
     generateInvoice?: boolean; // Si true, genera factura fiscal
+    ivaPercentage?: number; // Porcentaje de IVA para Factura A (21, 10.5, 27)
 }
 
 /**

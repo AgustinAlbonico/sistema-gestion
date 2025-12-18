@@ -161,6 +161,10 @@ export class CreateSaleDto {
     @IsOptional()
     generateInvoice?: boolean; // Si true, genera factura fiscal AFIP
 
+    @IsNumber()
+    @IsOptional()
+    ivaPercentage?: number; // Porcentaje de IVA para Factura A (21, 10.5, 27)
+
     @IsString()
     @IsOptional()
     @MaxLength(1000)

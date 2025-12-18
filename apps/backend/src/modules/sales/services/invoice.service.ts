@@ -73,13 +73,30 @@ export class InvoiceService {
             throw new BadRequestException('AFIP no está configurado');
         }
 
-        // Determinar tipo de factura
-        // Nota: Si el cliente no tiene condición IVA definida, asumimos Consumidor Final
-        const receiverIvaCondition = IvaCondition.CONSUMIDOR_FINAL;
+        // Determinar tipo de factura basado en condición IVA del cliente
+        // Si no hay cliente o no tiene condición IVA, se asume Consumidor Final
+        const receiverIvaCondition = sale.customer?.ivaCondition || IvaCondition.CONSUMIDOR_FINAL;
         const invoiceType = this.afipService.determineInvoiceType(
-            afipConfig.ivaCondition,
-            receiverIvaCondition
+            this.normalizeIvaCondition(afipConfig.ivaCondition),
+            this.normalizeIvaCondition(receiverIvaCondition)
         );
+
+        // Validar que para Factura A el cliente tenga CUIT válido
+        if (invoiceType === InvoiceType.FACTURA_A) {
+            const docType = sale.customer?.documentType?.toUpperCase();
+            const docNumber = sale.customer?.documentNumber?.replace(/\D/g, '');
+
+            if (docType !== 'CUIT' || !docNumber || docNumber.length !== 11) {
+                throw new BadRequestException(
+                    'Para emitir Factura A, el cliente debe tener CUIT válido (11 dígitos). ' +
+                    'Por favor, actualice los datos fiscales del cliente.'
+                );
+            }
+        }
+
+        // DEBUG: Ver datos del cliente antes de crear factura
+        this.logger.debug(`Cliente para factura - documentType: ${sale.customer?.documentType}, documentNumber: ${sale.customer?.documentNumber}, ivaCondition: ${sale.customer?.ivaCondition}`);
+        this.logger.debug(`getDocumentType result: ${this.getDocumentType(sale.customer)}`);
 
         // Crear factura en estado pendiente
         const invoice = invoiceRepo.create({
@@ -98,7 +115,7 @@ export class InvoiceService {
 
             // Datos del receptor
             receiverDocumentType: this.getDocumentType(sale.customer),
-            receiverDocumentNumber: sale.customer?.documentNumber || null,
+            receiverDocumentNumber: sale.customer?.documentNumber?.replace(/\D/g, '') || null,
             receiverName: sale.customerName || (sale.customer ? `${sale.customer.firstName} ${sale.customer.lastName}` : null),
             receiverAddress: sale.customer?.address || null,
             receiverIvaCondition: receiverIvaCondition,
@@ -110,10 +127,11 @@ export class InvoiceService {
             total: sale.total,
 
             // IVA (calculado si es RI)
+            // Asignar al campo correcto según el porcentaje de IVA
             netAmount: this.calculateNetAmount(sale, invoiceType),
-            iva21: this.calculateIva21(sale, invoiceType),
-            iva105: 0,
-            iva27: 0,
+            iva21: sale.ivaPercentage === 21 || !sale.ivaPercentage ? this.calculateIva21(sale, invoiceType) : 0,
+            iva105: sale.ivaPercentage === 10.5 ? this.calculateIva21(sale, invoiceType) : 0,
+            iva27: sale.ivaPercentage === 27 ? this.calculateIva21(sale, invoiceType) : 0,
             netAmountExempt: 0,
 
             // Condición de venta
@@ -334,6 +352,8 @@ export class InvoiceService {
             otherTaxes: Number(invoice.otherTaxes),
         };
 
+        this.logger.debug(`Factura A debug - DocTipo: ${request.docType}, DocNro: ${request.docNumber}, Cliente: ${JSON.stringify(sale.customer?.documentType)}`);
+
         return this.afipService.authorizeInvoice(request);
     }
 
@@ -373,6 +393,8 @@ export class InvoiceService {
 
     /**
      * Construye el array de IVA para AFIP
+     * BaseImp = monto neto gravado (base imponible)
+     * Importe = BaseImp × alícuota (calculado exactamente para evitar error 10051)
      */
     private buildIvaArray(invoice: Invoice): { id: number; baseAmount: number; amount: number }[] {
         const iva: { id: number; baseAmount: number; amount: number }[] = [];
@@ -382,27 +404,34 @@ export class InvoiceService {
             return iva;
         }
 
+        const netAmount = Number(invoice.netAmount);
+
+        // Para Factura A y B se informa el IVA
+        // Importe se calcula como BaseImp × alícuota para evitar error 10051
         if (invoice.iva21 > 0) {
+            const ivaAmount = Math.round(netAmount * 0.21 * 100) / 100;
             iva.push({
                 id: 5, // 21%
-                baseAmount: invoice.netAmount * 0.21,
-                amount: Number(invoice.iva21),
+                baseAmount: netAmount,
+                amount: ivaAmount,
             });
         }
 
         if (invoice.iva105 > 0) {
+            const ivaAmount = Math.round(netAmount * 0.105 * 100) / 100;
             iva.push({
                 id: 4, // 10.5%
-                baseAmount: invoice.netAmount * 0.105,
-                amount: Number(invoice.iva105),
+                baseAmount: netAmount,
+                amount: ivaAmount,
             });
         }
 
         if (invoice.iva27 > 0) {
+            const ivaAmount = Math.round(netAmount * 0.27 * 100) / 100;
             iva.push({
                 id: 6, // 27%
-                baseAmount: invoice.netAmount * 0.27,
-                amount: Number(invoice.iva27),
+                baseAmount: netAmount,
+                amount: ivaAmount,
             });
         }
 
@@ -428,6 +457,29 @@ export class InvoiceService {
     }
 
     /**
+     * Normaliza la condición IVA al formato esperado por determineInvoiceType()
+     * Convierte los valores del enum IvaCondition a strings en minúsculas
+     */
+    private normalizeIvaCondition(condition: string): string {
+        const normalized = condition.toLowerCase().replace(/_/g, '_');
+
+        // Mapear a los valores esperados por determineInvoiceType()
+        switch (normalized) {
+            case 'responsable_inscripto':
+                return 'responsable_inscripto';
+            case 'responsable_monotributo':
+            case 'monotributista':
+                return 'monotributo';
+            case 'consumidor_final':
+                return 'consumidor_final';
+            case 'exento':
+                return 'exento';
+            default:
+                return 'consumidor_final';
+        }
+    }
+
+    /**
      * Calcula el importe neto gravado
      * Para Factura C (monotributo): el total va como neto (no se discrimina IVA)
      * Para Factura A/B (RI): se calcula el neto sin IVA
@@ -437,19 +489,30 @@ export class InvoiceService {
             // Monotributo: el importe completo va como neto (no hay IVA)
             return Number(sale.total);
         }
-        // Para RI: total / 1.21 (asumiendo 21% IVA)
-        return Number((sale.total / 1.21).toFixed(2));
+        // Para RI (A y B): neto = total / (1 + iva%)
+        // Usar el porcentaje de IVA de la venta si está disponible, sino 21%
+        const ivaRate = sale.ivaPercentage || 21;
+        const ivaDivisor = 1 + ivaRate / 100;
+        const netAmount = Math.round((Number(sale.total) / ivaDivisor) * 100) / 100;
+        return netAmount;
     }
 
     /**
-     * Calcula el IVA 21% (para RI)
+     * Calcula el IVA (para RI)
+     * Se calcula como Total - Neto para garantizar consistencia matemática
      */
     private calculateIva21(sale: Sale, invoiceType: InvoiceType): number {
         if (invoiceType === InvoiceType.FACTURA_C) {
             return 0;
         }
-        const netAmount = sale.total / 1.21;
-        return Number((netAmount * 0.21).toFixed(2));
+        // Usar el porcentaje de IVA de la venta si está disponible, sino 21%
+        const ivaRate = sale.ivaPercentage || 21;
+        const ivaDivisor = 1 + ivaRate / 100;
+        // Calcular neto primero
+        const netAmount = Math.round((Number(sale.total) / ivaDivisor) * 100) / 100;
+        // IVA = Total - Neto (garantiza que sumen exactamente)
+        const iva = Math.round((Number(sale.total) - netAmount) * 100) / 100;
+        return iva;
     }
 
     /**

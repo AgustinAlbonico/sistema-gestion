@@ -36,7 +36,9 @@ import { migrations } from './migrations';
         username: config.get('DATABASE_USER'),
         password: config.get('DATABASE_PASSWORD'),
         database: config.get('DATABASE_NAME'),
-        // synchronize: false (usar migraciones en producción para seguridad de datos)
+        // Cargar entidades explícitamente para el bundle
+        entities: entities,
+        // Usar migraciones en producción (no synchronize)
         synchronize: false,
         // Cargar migraciones explícitamente para el bundle
         migrations: migrations,

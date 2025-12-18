@@ -21,8 +21,14 @@ import { CustomerCategoriesService } from './customer-categories.service';
 import { CustomersRepository } from './customers.repository';
 import { CustomerCategoriesRepository } from './customer-categories.repository';
 
+// Módulos externos
+import { ConfigurationModule } from '../configuration/configuration.module';
+
 @Module({
-    imports: [TypeOrmModule.forFeature([Customer, CustomerCategory])],
+    imports: [
+        TypeOrmModule.forFeature([Customer, CustomerCategory]),
+        ConfigurationModule,
+    ],
     controllers: [CustomersController, CustomerCategoriesController],
     providers: [
         CustomersService,
@@ -32,5 +38,5 @@ import { CustomerCategoriesRepository } from './customer-categories.repository';
     ],
     exports: [CustomersService, CustomerCategoriesService],
 })
-export class CustomersModule {}
+export class CustomersModule { }
 

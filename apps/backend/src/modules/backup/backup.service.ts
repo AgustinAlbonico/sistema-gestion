@@ -130,7 +130,16 @@ export class BackupService {
 
         // Formato custom comprimido (.backup) - más eficiente que SQL plano
         const filename = `backup${timestamp}.backup`;
-        const destinationPath = dto.destinationPath || this.defaultBackupPath;
+
+        // Si se especifica una ruta de destino, crear subcarpeta 'backups' para evitar
+        // problemas de permisos al escribir directamente en la raíz de un disco (C:\, D:\, etc.)
+        let destinationPath = dto.destinationPath || this.defaultBackupPath;
+
+        // Detectar si es raíz de disco (ej: C:\, D:\) y agregar subcarpeta
+        if (destinationPath && /^[A-Za-z]:\\?$/.test(destinationPath.trim())) {
+            destinationPath = path.join(destinationPath, 'backups');
+            this.logger.log(`Ruta raíz detectada, usando: ${destinationPath}`);
+        }
 
         // Asegurar que el directorio destino existe
         this.ensureBackupDirectory(destinationPath);

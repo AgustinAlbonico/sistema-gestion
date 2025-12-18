@@ -142,6 +142,18 @@ export class Sale {
     @Column({ type: 'boolean', default: false })
     fiscalPending!: boolean; // Si se solicitó factura pero falló la generación (pendiente de reintento)
 
+    @Column({
+        type: 'decimal',
+        precision: 4,
+        scale: 2,
+        nullable: true,
+        transformer: {
+            to: (value: number) => value,
+            from: (value: string) => (value ? Number.parseFloat(value) : null),
+        },
+    })
+    ivaPercentage!: number | null; // Porcentaje de IVA para Factura A (21, 10.5, 27)
+
     @Column({ type: 'text', nullable: true })
     fiscalError!: string | null; // Mensaje de error de la última falla de facturación
 

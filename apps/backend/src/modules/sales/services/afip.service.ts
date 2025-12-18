@@ -410,6 +410,9 @@ export class AfipService {
             );
 
             this.logger.debug(`Solicitando CAE para comprobante ${nextNumber}`);
+            this.logger.debug(`IVA Items enviados a AFIP: ${JSON.stringify(ivaItems)}`);
+            this.logger.debug(`Request: netAmount=${request.netAmount}, total=${request.total}, ivaTotal=${request.iva.reduce((sum, item) => sum + item.amount, 0)}`);
+
 
             const response = await axios.post(wsfeUrl, soapRequest, {
                 headers: {

@@ -6,9 +6,11 @@ import {
     Injectable,
     NotFoundException,
     ConflictException,
+    BadRequestException,
 } from '@nestjs/common';
 import { CustomersRepository } from './customers.repository';
 import { CustomerCategoriesRepository } from './customer-categories.repository';
+import { FiscalConfigurationService } from '../configuration/fiscal-configuration.service';
 import {
     CreateCustomerDto,
     UpdateCustomerDto,
@@ -22,6 +24,7 @@ export class CustomersService {
     constructor(
         private readonly customersRepository: CustomersRepository,
         private readonly categoriesRepository: CustomerCategoriesRepository,
+        private readonly fiscalConfigService: FiscalConfigurationService,
     ) { }
 
     /**
@@ -56,6 +59,13 @@ export class CustomersService {
                 throw new NotFoundException('Categoría no encontrada');
             }
         }
+
+        // Validar CUIT obligatorio para cliente RI si emisor es RI
+        await this.validateCuitForResponsableInscripto(
+            dto.ivaCondition,
+            dto.documentType,
+            dto.documentNumber
+        );
 
         // Limpiar campos vacíos y convertir undefined a null
         const cleanedDto = {
@@ -143,6 +153,60 @@ export class CustomersService {
             if (!category) {
                 throw new NotFoundException('Categoría no encontrada');
             }
+        }
+
+        // Validar CUIT si cambia la condición IVA a RI
+        const finalIvaCondition = dto.ivaCondition ?? customer.ivaCondition;
+        const finalDocType = dto.documentType ?? customer.documentType;
+        const finalDocNumber = dto.documentNumber ?? customer.documentNumber;
+
+        await this.validateCuitForResponsableInscripto(
+            finalIvaCondition,
+            finalDocType,
+            finalDocNumber
+        );
+    }
+
+    /**
+     * Valida que si el emisor es Responsable Inscripto y el cliente también,
+     * entonces el cliente debe tener CUIT obligatorio (requerido por AFIP para Factura A)
+     */
+    private async validateCuitForResponsableInscripto(
+        customerIvaCondition?: IvaCondition | null,
+        documentType?: DocumentType | null | string,
+        documentNumber?: string | null
+    ): Promise<void> {
+        // Si el cliente no es Responsable Inscripto, no aplica la validación
+        if (customerIvaCondition !== IvaCondition.RESPONSABLE_INSCRIPTO) {
+            return;
+        }
+
+        // Obtener configuración fiscal del emisor
+        try {
+            const fiscalConfig = await this.fiscalConfigService.getPublicConfiguration();
+
+            // Si el emisor no es Responsable Inscripto, no aplica la validación
+            if (fiscalConfig.ivaCondition !== IvaCondition.RESPONSABLE_INSCRIPTO) {
+                return;
+            }
+
+            // Emisor RI + Cliente RI = CUIT obligatorio
+            const isDocTypeCuit = documentType === 'CUIT' || documentType === DocumentType.CUIT;
+            const hasValidCuit = isDocTypeCuit && documentNumber && documentNumber.trim().length === 11;
+
+            if (!hasValidCuit) {
+                throw new BadRequestException(
+                    'Para clientes Responsable Inscripto, el CUIT es obligatorio (11 dígitos). ' +
+                    'Este dato es requerido por AFIP para emitir Factura A.'
+                );
+            }
+        } catch (error) {
+            // Si es BadRequestException, relanzar
+            if (error instanceof BadRequestException) {
+                throw error;
+            }
+            // Si no hay configuración fiscal, no aplicar validación estricta
+            return;
         }
     }
 

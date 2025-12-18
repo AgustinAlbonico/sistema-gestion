@@ -111,6 +111,7 @@ export function SaleForm({ onSubmit, isLoading }: SaleFormProps) {
     const [surchargeType, setSurchargeType] = useState<'FIXED' | 'PERCENTAGE'>('PERCENTAGE');
     const [surchargePercentage, setSurchargePercentage] = useState<number | string>(0);
     const [showNotes, setShowNotes] = useState(false);
+    const [ivaPercentage, setIvaPercentage] = useState<number>(21); // IVA por defecto 21%
 
     const queryClient = useQueryClient();
 
@@ -349,11 +350,16 @@ export function SaleForm({ onSubmit, isLoading }: SaleFormProps) {
         const itemsForApi: CreateSaleItemDTO[] = data.items.map(({ stock: _stock, productName: _productName, ...item }) => item);
         const taxesForApi: CreateSaleTaxDTO[] | undefined = data.taxes ? data.taxes.map((t) => ({ ...t })) : undefined;
 
+        // Solo enviar ivaPercentage cuando es RI→RI (Factura A)
+        const shouldIncludeIva = fiscalConfig?.ivaCondition === IvaCondition.RESPONSABLE_INSCRIPTO &&
+            selectedCustomer?.ivaCondition === IvaCondition.RESPONSABLE_INSCRIPTO;
+
         const payload: CreateSaleDTO = {
             ...data,
             items: itemsForApi,
             taxes: taxesForApi,
             payments: data.isOnAccount ? undefined : paymentsWithIds,
+            ivaPercentage: shouldIncludeIva ? ivaPercentage : undefined,
         };
 
         onSubmit(payload);
@@ -908,6 +914,50 @@ export function SaleForm({ onSubmit, isLoading }: SaleFormProps) {
                                             {formatCurrency(total)}
                                         </span>
                                     </div>
+
+                                    {/* Desglose IVA para Factura A (RI → RI) */}
+                                    {fiscalConfig?.ivaCondition === IvaCondition.RESPONSABLE_INSCRIPTO &&
+                                        selectedCustomer?.ivaCondition === IvaCondition.RESPONSABLE_INSCRIPTO &&
+                                        total > 0 ? (() => {
+                                            const ivaDivisor = 1 + ivaPercentage / 100;
+                                            const netoGravado = Math.round((total / ivaDivisor) * 100) / 100;
+                                            const ivaAmount = Math.round((total - netoGravado) * 100) / 100;
+                                            return (
+                                                <div className="mt-4 pt-4 border-t border-white/20">
+                                                    <div className="flex items-center justify-between gap-2 mb-3">
+                                                        <div className="flex items-center gap-2">
+                                                            <Badge className="bg-blue-500/20 text-blue-300 border-blue-400/30 text-[10px]">
+                                                                Factura A
+                                                            </Badge>
+                                                            <span className="text-xs opacity-60">Desglose IVA</span>
+                                                        </div>
+                                                        <Select
+                                                            value={String(ivaPercentage)}
+                                                            onValueChange={(val) => setIvaPercentage(Number(val))}
+                                                        >
+                                                            <SelectTrigger className="h-7 w-20 bg-white/10 border-white/20 text-xs">
+                                                                <SelectValue />
+                                                            </SelectTrigger>
+                                                            <SelectContent>
+                                                                <SelectItem value="21">21%</SelectItem>
+                                                                <SelectItem value="10.5">10.5%</SelectItem>
+                                                                <SelectItem value="27">27%</SelectItem>
+                                                            </SelectContent>
+                                                        </Select>
+                                                    </div>
+                                                    <div className="space-y-1 text-sm">
+                                                        <div className="flex justify-between opacity-70">
+                                                            <span>Neto Gravado</span>
+                                                            <span>{formatCurrency(netoGravado)}</span>
+                                                        </div>
+                                                        <div className="flex justify-between opacity-70">
+                                                            <span>IVA {ivaPercentage}%</span>
+                                                            <span>{formatCurrency(ivaAmount)}</span>
+                                                        </div>
+                                                    </div>
+                                                </div>
+                                            );
+                                        })() : null}
                                 </div>
                             </div>
 
