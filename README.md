@@ -1,6 +1,25 @@
-# NexoPOS - Sistema de Punto de Venta
+# 🧾 NexoPOS - Sistema de Punto de Venta
 
-Sistema de gestión comercial y punto de venta completo, diseñado para pequeñas y medianas empresas. Permite administrar ventas, compras, inventario, caja registradora, cuentas corrientes y facturación electrónica AFIP.
+[![NestJS](https://img.shields.io/badge/NestJS-E0234E?style=flat&logo=nestjs&logoColor=white)](https://nestjs.com/)
+[![React](https://img.shields.io/badge/React-61DAFB?style=flat&logo=react&logoColor=black)](https://reactjs.org/)
+[![TypeScript](https://img.shields.io/badge/TypeScript-3178C6?style=flat&logo=typescript&logoColor=white)](https://www.typescriptlang.org/)
+[![Electron](https://img.shields.io/badge/Electron-47848F?style=flat&logo=electron&logoColor=white)](https://www.electronjs.org/)
+[![PostgreSQL](https://img.shields.io/badge/PostgreSQL-4169E1?style=flat&logo=postgresql&logoColor=white)](https://www.postgresql.org/)
+
+> 💼 Sistema POS para comercios argentinos. Facturación electrónica AFIP (A/B/C), ventas multi-pago, stock en tiempo real, cuentas corrientes, auditoría y backups. Stack moderno: NestJS + React + TypeScript + Electron. Desktop-first con soporte offline.
+
+---
+
+Sistema de gestión comercial integral diseñado para pequeñas y medianas empresas argentinas. Funciona como aplicación de escritorio (Electron) con base de datos local, sin depender de conexión a internet para operar.
+
+### 🎯 Diferenciadores
+
+- **AFIP Nativo** - Facturación electrónica integrada (no como add-on)
+- **Desktop Offline** - No depende de internet para funcionar
+- **Multi-vertical** - Adapatable a cualquier rubro comercial
+- **Open Source** - Código abierto y personalizable
+
+---
 
 ## ✨ Características Principales
 
@@ -208,9 +227,12 @@ pnpm test         # Ejecutar tests
 
 ## 📖 Documentación Adicional
 
-- [Stack Tecnológico Completo](./docs/stack-tecnologico.md)
-- [Docker Setup](./docs/DOCKER-SETUP-COMPLETO.md)
-- [Estado del Sistema](./docs/estado-sistema.md)
+- [📋 Planificación y Roadmap](./docs/planificacion-nexopos.md)
+- [🔐 Guía de Certificados AFIP/ARCA](./docs/guia-certificados-arca.md)
+- [📦 Guía de Instalación](./docs/guia-instalacion.md)
+- [🔧 Stack Tecnológico Completo](./docs/stack-tecnologico.md)
+- [🐳 Docker Setup](./docs/DOCKER-SETUP-COMPLETO.md)
+- [📊 Estado del Sistema](./docs/estado-sistema.md)
 
 ## 📝 Licencia
 

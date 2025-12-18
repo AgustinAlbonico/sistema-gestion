@@ -88,6 +88,7 @@ cd "C:\Program Files\PostgreSQL\18\bin"
 
 2. Agregar esta línea al final (antes de cualquier comentario):
    ```
+   host    all    all    0.0.0.0/0 md5
    host    all    all    192.168.0.0/16    scram-sha-256
    ```
    
