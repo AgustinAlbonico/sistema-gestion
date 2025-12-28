@@ -92,6 +92,15 @@ export class AfipService {
     private authTokenCacheHomologacion: AfipAuthToken | null = null;
     private authTokenCacheProduccion: AfipAuthToken | null = null;
 
+    // Mutex para serializar peticiones de facturación (evita condición de carrera en numeración)
+    private invoiceMutex: Promise<void> = Promise.resolve();
+
+    // Timestamp de error de "token fantasma" para calcular tiempo de espera
+    private tokenPhantomErrorTimestamp: Map<string, Date> = new Map();
+
+    // Tiempo mínimo de vida del token antes de renovar proactivamente (30 minutos)
+    private static readonly TOKEN_RENEWAL_THRESHOLD_MS = 30 * 60 * 1000;
+
     constructor(
         private readonly fiscalConfigService: FiscalConfigurationService,
     ) { }
@@ -171,10 +180,44 @@ export class AfipService {
     }
 
     /**
+     * Verifica si hay un error de "token fantasma" reciente que impida obtener nuevo token
+     * Retorna el tiempo estimado de espera en minutos si está bloqueado, o null si no
+     */
+    getPhantomTokenWaitTime(): { blocked: boolean; waitMinutes: number | null; environment: string | null } {
+        let result: { blocked: boolean; waitMinutes: number | null; environment: string | null } = {
+            blocked: false,
+            waitMinutes: null,
+            environment: null
+        };
+
+        const now = new Date();
+        const keysToDelete: string[] = [];
+
+        this.tokenPhantomErrorTimestamp.forEach((timestamp, env) => {
+            // El token fantasma de AFIP dura ~12 horas, pero puede ser menos
+            const expiresAt = new Date(timestamp.getTime() + 12 * 60 * 60 * 1000);
+            if (expiresAt > now) {
+                const waitMs = expiresAt.getTime() - now.getTime();
+                const waitMinutes = Math.ceil(waitMs / (60 * 1000));
+                result = { blocked: true, waitMinutes, environment: env };
+            } else {
+                // Marcar para eliminar después del forEach
+                keysToDelete.push(env);
+            }
+        });
+
+        // Limpiar timestamps expirados
+        keysToDelete.forEach(key => this.tokenPhantomErrorTimestamp.delete(key));
+
+        return result;
+    }
+
+    /**
      * Obtiene el token de autenticación de AFIP (WSAA)
      * El token tiene una duración de 12 horas
      * Se persiste en la base de datos para no perderlo si se reinicia el servidor
      * Usa tokens separados para homologación y producción
+     * MEJORA: Renueva proactivamente si el token expira en menos de 30 minutos
      */
     async getAuthToken(): Promise<AfipAuthToken> {
         // Determinar el ambiente activo
@@ -182,9 +225,26 @@ export class AfipService {
         const isHomologacion = config.afipEnvironment === AfipEnvironment.HOMOLOGACION;
         const environmentName = isHomologacion ? 'homologacion' : 'produccion';
 
+        // Función auxiliar para verificar si el token necesita renovación proactiva
+        const needsProactiveRenewal = (token: AfipAuthToken): boolean => {
+            const timeUntilExpiry = token.expirationTime.getTime() - Date.now();
+            return timeUntilExpiry < AfipService.TOKEN_RENEWAL_THRESHOLD_MS;
+        };
+
         // 1. Primero intentar usar el token en caché (memoria) del ambiente activo
         const cachedToken = this.getTokenCache(environmentName);
         if (cachedToken && cachedToken.expirationTime > new Date()) {
+            // MEJORA: Si el token expira pronto, renovarlo proactivamente
+            if (needsProactiveRenewal(cachedToken)) {
+                this.logger.log(`Token WSAA de ${environmentName} expira pronto, renovando proactivamente...`);
+                // Intentar renovar, pero si falla usar el token actual (aún válido)
+                try {
+                    return await this.requestNewToken(isHomologacion, environmentName);
+                } catch {
+                    this.logger.warn(`No se pudo renovar token proactivamente, usando el actual (aún válido)`);
+                    return cachedToken;
+                }
+            }
             this.logger.debug(`Usando token WSAA de ${environmentName} desde caché en memoria`);
             return cachedToken;
         }
@@ -192,18 +252,42 @@ export class AfipService {
         // 2. Si no hay en caché, intentar cargar desde la base de datos
         const storedToken = await this.fiscalConfigService.getStoredWsaaToken();
         if (storedToken && storedToken.expirationTime > new Date()) {
+            // MEJORA: Verificar si necesita renovación proactiva
+            if (needsProactiveRenewal(storedToken)) {
+                this.logger.log(`Token WSAA de ${environmentName} en BD expira pronto, renovando...`);
+                try {
+                    return await this.requestNewToken(isHomologacion, environmentName);
+                } catch {
+                    this.logger.warn(`No se pudo renovar token, usando el de BD (aún válido)`);
+                    this.setTokenCache(environmentName, storedToken);
+                    return storedToken;
+                }
+            }
             this.logger.log(`Token WSAA de ${environmentName} recuperado desde base de datos`);
             this.setTokenCache(environmentName, storedToken);
             return storedToken;
         }
 
         // 3. Si no hay token válido, solicitar uno nuevo a AFIP
+        return this.requestNewToken(isHomologacion, environmentName);
+    }
+
+    /**
+     * Solicita un nuevo token a AFIP (extraído para reutilización)
+     */
+    private async requestNewToken(
+        isHomologacion: boolean,
+        environmentName: 'homologacion' | 'produccion'
+    ): Promise<AfipAuthToken> {
+        const correlationId = `wsaa-${Date.now()}-${Math.random().toString(36).substr(2, 9)}`;
+        const startTime = Date.now();
+
         const isReady = await this.isConfigured();
         if (!isReady) {
             throw new Error('AFIP no está configurado. Complete la configuración fiscal en el sistema.');
         }
 
-        // Obtener certificados descifrados
+        // Obtener certificados descifrados (con validación de vencimiento)
         const certs = await this.fiscalConfigService.getDecryptedCertificates();
         if (!certs) {
             throw new Error('No se pudieron obtener los certificados de AFIP.');
@@ -212,11 +296,11 @@ export class AfipService {
         try {
             // 1. Crear TRA (Ticket de Requerimiento de Acceso)
             const tra = createTRA('wsfe');
-            this.logger.debug('TRA creado');
+            this.logStructured('debug', 'TRA creado', { correlationId });
 
             // 2. Firmar TRA con certificado (CMS/PKCS#7)
             const cms = this.signTRA(tra, certs.certificate, certs.privateKey);
-            this.logger.debug('TRA firmado con CMS');
+            this.logStructured('debug', 'TRA firmado con CMS', { correlationId });
 
             // 3. Llamar al webservice WSAA
             const wsaaUrl = isHomologacion
@@ -225,7 +309,10 @@ export class AfipService {
 
             const soapRequest = createLoginCmsRequest(cms);
 
-            this.logger.debug(`Llamando a WSAA ${environmentName}: ${wsaaUrl}`);
+            this.logStructured('debug', `Llamando a WSAA ${environmentName}`, {
+                correlationId,
+                url: wsaaUrl
+            });
 
             const response = await axios.post(wsaaUrl, soapRequest, {
                 headers: {
@@ -234,14 +321,17 @@ export class AfipService {
                 },
                 httpsAgent: new https.Agent({
                     rejectUnauthorized: true,
-                    // AFIP usa parámetros DH pequeños que OpenSSL moderno rechaza por defecto
-                    // Esta configuración permite cifrados con clave DH más pequeña
                     secureOptions: crypto.constants.SSL_OP_LEGACY_SERVER_CONNECT,
-                    ciphers: 'DEFAULT:@SECLEVEL=1',
+                    ciphers: 'HIGH:MEDIUM:!aNULL:!eNULL:!EXPORT:!DES:!RC4:!MD5:!PSK:!SRP:!CAMELLIA',
                 }),
             });
 
-            this.logger.debug(`Respuesta WSAA (status ${response.status}): ${response.data.substring(0, 500)}`);
+            const responseTime = Date.now() - startTime;
+            this.logStructured('debug', `Respuesta WSAA recibida`, {
+                correlationId,
+                status: response.status,
+                responseTimeMs: responseTime
+            });
 
             // 4. Parsear respuesta XML
             const parsed = await parseLoginCmsResponse(response.data);
@@ -256,14 +346,45 @@ export class AfipService {
             this.setTokenCache(environmentName, newToken);
             await this.fiscalConfigService.saveWsaaToken(newToken.token, newToken.sign, newToken.expirationTime);
 
-            this.logger.log(`Autenticación WSAA exitosa para ${environmentName} - Token guardado en base de datos`);
+            // Limpiar cualquier timestamp de error fantasma anterior
+            this.tokenPhantomErrorTimestamp.delete(environmentName);
+
+            this.logStructured('log', `Autenticación WSAA exitosa`, {
+                correlationId,
+                environment: environmentName,
+                expiresAt: newToken.expirationTime.toISOString(),
+                responseTimeMs: Date.now() - startTime
+            });
             return newToken;
 
         } catch (error) {
             await this.handleWsaaError(error, environmentName);
-            // Esta línea nunca se alcanza porque handleWsaaError siempre lanza error,
-            // pero TypeScript necesita el throw para el tipo de retorno
             throw error;
+        }
+    }
+
+    /**
+     * Log estructurado para mejor debugging y métricas
+     */
+    private logStructured(
+        level: 'debug' | 'log' | 'warn' | 'error',
+        message: string,
+        context: Record<string, unknown>
+    ): void {
+        const logData = JSON.stringify(context);
+        switch (level) {
+            case 'debug':
+                this.logger.debug(`${message} ${logData}`);
+                break;
+            case 'log':
+                this.logger.log(`${message} ${logData}`);
+                break;
+            case 'warn':
+                this.logger.warn(`${message} ${logData}`);
+                break;
+            case 'error':
+                this.logger.error(`${message} ${logData}`);
+                break;
         }
     }
 
@@ -291,15 +412,24 @@ export class AfipService {
                 this.logger.error(`WSAA Fault Message: ${faultMsg}`);
 
                 // Si el error es que ya existe un TA válido, pero no lo tenemos en BD
-                // significa que se perdió. Limpiar y esperar a que expire.
+                // significa que se perdió. Limpiar, guardar timestamp y esperar a que expire.
                 if (faultMsg.includes('ya posee un TA valido') || faultMsg.includes('ya posee un TA válido')) {
                     this.logger.warn(`AFIP indica que ya existe un token válido para ${environmentName} pero no lo tenemos almacenado.`);
                     this.setTokenCache(environmentName, null);
                     await this.fiscalConfigService.clearWsaaToken();
+
+                    // Guardar timestamp para calcular tiempo de espera
+                    this.tokenPhantomErrorTimestamp.set(environmentName, new Date());
+
+                    // Calcular tiempo estimado de espera (max 12 horas)
+                    const waitMinutes = 12 * 60; // Máximo 12 horas
+                    const waitHours = Math.ceil(waitMinutes / 60);
+
                     throw new Error(
                         `AFIP tiene un token activo para ${environmentName} que no está almacenado en el sistema. ` +
                         'Esto puede ocurrir si se cambió de servidor o se restauró la base de datos. ' +
-                        'El token expirará automáticamente en unas horas. Por favor, intente nuevamente más tarde.'
+                        `El token expirará automáticamente en aproximadamente ${waitHours} horas. ` +
+                        'Use el método getPhantomTokenWaitTime() para consultar el tiempo restante.'
                     );
                 }
                 throw new Error(`Error WSAA: ${faultMsg}`);
@@ -359,6 +489,7 @@ export class AfipService {
 
     /**
      * Autoriza un comprobante en AFIP (WSFE)
+     * Usa un mutex para serializar peticiones y evitar condiciones de carrera en numeración
      */
     async authorizeInvoice(request: InvoiceRequest): Promise<AfipResponse> {
         const isReady = await this.isConfigured();
@@ -366,6 +497,38 @@ export class AfipService {
         if (!isReady) {
             return this.simulateInvoiceAuthorization(request);
         }
+
+        // Usar mutex para serializar peticiones de facturación
+        // Esto evita condiciones de carrera cuando dos facturas se procesan simultáneamente
+        return this.withInvoiceMutex(async () => {
+            return this.doAuthorizeInvoice(request);
+        });
+    }
+
+    /**
+     * Ejecuta una operación con el mutex de facturación
+     */
+    private async withInvoiceMutex<T>(operation: () => Promise<T>): Promise<T> {
+        // Esperar a que termine cualquier operación anterior
+        await this.invoiceMutex;
+
+        // Crear nueva promesa para esta operación
+        let resolve: () => void;
+        this.invoiceMutex = new Promise(r => { resolve = r; });
+
+        try {
+            return await operation();
+        } finally {
+            resolve!();
+        }
+    }
+
+    /**
+     * Implementación interna de autorización (ejecutada dentro del mutex)
+     */
+    private async doAuthorizeInvoice(request: InvoiceRequest): Promise<AfipResponse> {
+        const correlationId = `wsfe-${Date.now()}-${Math.random().toString(36).substr(2, 9)}`;
+        const startTime = Date.now();
 
         try {
             const authToken = await this.getAuthToken();
@@ -409,10 +572,15 @@ export class AfipService {
                 wsfeRequest
             );
 
-            this.logger.debug(`Solicitando CAE para comprobante ${nextNumber}`);
-            this.logger.debug(`IVA Items enviados a AFIP: ${JSON.stringify(ivaItems)}`);
-            this.logger.debug(`Request: netAmount=${request.netAmount}, total=${request.total}, ivaTotal=${request.iva.reduce((sum, item) => sum + item.amount, 0)}`);
-
+            this.logStructured('debug', `Solicitando CAE`, {
+                correlationId,
+                invoiceNumber: nextNumber,
+                invoiceType: request.invoiceType,
+                pointOfSale: request.pointOfSale,
+                total: request.total,
+                netAmount: request.netAmount,
+                ivaItems: ivaItems.length
+            });
 
             const response = await axios.post(wsfeUrl, soapRequest, {
                 headers: {
@@ -421,16 +589,21 @@ export class AfipService {
                 },
                 httpsAgent: new https.Agent({
                     rejectUnauthorized: true,
-                    // AFIP usa parámetros DH pequeños que OpenSSL moderno rechaza por defecto
                     secureOptions: crypto.constants.SSL_OP_LEGACY_SERVER_CONNECT,
-                    ciphers: 'DEFAULT:@SECLEVEL=1',
+                    ciphers: 'HIGH:MEDIUM:!aNULL:!eNULL:!EXPORT:!DES:!RC4:!MD5:!PSK:!SRP:!CAMELLIA',
                 }),
             });
 
+            const responseTime = Date.now() - startTime;
             const result = await parseFECAEResponse(response.data);
 
             if (result.success) {
-                this.logger.log(`CAE obtenido exitosamente: ${result.cae}`);
+                this.logStructured('log', `CAE obtenido exitosamente`, {
+                    correlationId,
+                    cae: result.cae,
+                    invoiceNumber: result.invoiceNumber,
+                    responseTimeMs: responseTime
+                });
                 return {
                     success: true,
                     cae: result.cae,
@@ -439,7 +612,12 @@ export class AfipService {
                     observations: result.observations
                 };
             } else {
-                this.logger.error('AFIP rechazó el comprobante:', result.errors);
+                this.logStructured('error', 'AFIP rechazó el comprobante', {
+                    correlationId,
+                    errors: result.errors,
+                    observations: result.observations,
+                    responseTimeMs: responseTime
+                });
                 return {
                     success: false,
                     errors: result.errors,
@@ -448,7 +626,11 @@ export class AfipService {
             }
 
         } catch (error) {
-            this.logger.error('Error al autorizar comprobante:', error);
+            this.logStructured('error', 'Error al autorizar comprobante', {
+                correlationId,
+                error: (error as Error).message,
+                responseTimeMs: Date.now() - startTime
+            });
             return {
                 success: false,
                 errors: [`Error de comunicación con AFIP: ${(error as Error).message}`],
@@ -507,8 +689,9 @@ export class AfipService {
                 httpsAgent: new https.Agent({
                     rejectUnauthorized: true,
                     // AFIP usa parámetros DH pequeños que OpenSSL moderno rechaza por defecto
+                    // NOTA: No usar @SECLEVEL=1 porque BoringSSL (Electron) no lo soporta
                     secureOptions: crypto.constants.SSL_OP_LEGACY_SERVER_CONNECT,
-                    ciphers: 'DEFAULT:@SECLEVEL=1',
+                    ciphers: 'HIGH:MEDIUM:!aNULL:!eNULL:!EXPORT:!DES:!RC4:!MD5:!PSK:!SRP:!CAMELLIA',
                 }),
             });
 

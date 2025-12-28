@@ -401,8 +401,11 @@ export class InvoiceService {
 
     /**
      * Construye el array de IVA para AFIP
-     * BaseImp = monto neto gravado (base imponible)
+     * BaseImp = monto neto gravado (base imponible) correspondiente a cada alícuota
      * Importe = BaseImp × alícuota (calculado exactamente para evitar error 10051)
+     * 
+     * MEJORA: Ahora calcula correctamente la base imponible por alícuota cuando
+     * hay productos con diferentes porcentajes de IVA en la misma factura.
      */
     private buildIvaArray(invoice: Invoice): { id: number; baseAmount: number; amount: number }[] {
         const iva: { id: number; baseAmount: number; amount: number }[] = [];
@@ -412,33 +415,53 @@ export class InvoiceService {
             return iva;
         }
 
-        const netAmount = Number(invoice.netAmount);
+        // Calcular totales de IVA para determinar si hay múltiples alícuotas
+        const iva21Amount = Number(invoice.iva21) || 0;
+        const iva105Amount = Number(invoice.iva105) || 0;
+        const iva27Amount = Number(invoice.iva27) || 0;
+        const totalIvaAmount = iva21Amount + iva105Amount + iva27Amount;
 
-        // Para Factura A y B se informa el IVA
-        // Importe se calcula como BaseImp × alícuota para evitar error 10051
-        if (invoice.iva21 > 0) {
-            const ivaAmount = Math.round(netAmount * 0.21 * 100) / 100;
+        // Si no hay IVA, retornar vacío
+        if (totalIvaAmount === 0) {
+            return iva;
+        }
+
+        // Calcular la base imponible a partir del IVA almacenado
+        // BaseImp = IVA / alícuota
+        // Esto es más preciso que usar netAmount cuando hay múltiples alícuotas
+
+        if (iva21Amount > 0) {
+            // Base imponible del 21%: BaseImp = IVA21 / 0.21
+            const baseAmount21 = Math.round((iva21Amount / 0.21) * 100) / 100;
+            // Recalcular IVA como BaseImp × alícuota para evitar error 10051
+            const ivaAmount = Math.round(baseAmount21 * 0.21 * 100) / 100;
             iva.push({
                 id: 5, // 21%
-                baseAmount: netAmount,
+                baseAmount: baseAmount21,
                 amount: ivaAmount,
             });
         }
 
-        if (invoice.iva105 > 0) {
-            const ivaAmount = Math.round(netAmount * 0.105 * 100) / 100;
+        if (iva105Amount > 0) {
+            // Base imponible del 10.5%: BaseImp = IVA105 / 0.105
+            const baseAmount105 = Math.round((iva105Amount / 0.105) * 100) / 100;
+            // Recalcular IVA como BaseImp × alícuota para evitar error 10051
+            const ivaAmount = Math.round(baseAmount105 * 0.105 * 100) / 100;
             iva.push({
                 id: 4, // 10.5%
-                baseAmount: netAmount,
+                baseAmount: baseAmount105,
                 amount: ivaAmount,
             });
         }
 
-        if (invoice.iva27 > 0) {
-            const ivaAmount = Math.round(netAmount * 0.27 * 100) / 100;
+        if (iva27Amount > 0) {
+            // Base imponible del 27%: BaseImp = IVA27 / 0.27
+            const baseAmount27 = Math.round((iva27Amount / 0.27) * 100) / 100;
+            // Recalcular IVA como BaseImp × alícuota para evitar error 10051
+            const ivaAmount = Math.round(baseAmount27 * 0.27 * 100) / 100;
             iva.push({
                 id: 6, // 27%
-                baseAmount: netAmount,
+                baseAmount: baseAmount27,
                 amount: ivaAmount,
             });
         }

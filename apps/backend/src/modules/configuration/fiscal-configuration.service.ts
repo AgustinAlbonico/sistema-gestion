@@ -90,6 +90,14 @@ export class FiscalConfigurationService implements OnModuleInit {
     async updateEmitterData(dto: UpdateEmitterDataDto): Promise<FiscalConfigurationResponseDto> {
         const config = await this.getConfiguration();
 
+        // Validar CUIT si se proporciona
+        if (dto.cuit !== undefined && dto.cuit) {
+            const cuitValidation = this.validateCuit(dto.cuit);
+            if (!cuitValidation.valid) {
+                throw new BadRequestException(`CUIT inválido: ${cuitValidation.error}`);
+            }
+        }
+
         // Actualizar campos
         if (dto.businessName !== undefined) config.businessName = dto.businessName;
         if (dto.cuit !== undefined) config.cuit = dto.cuit;
@@ -112,6 +120,45 @@ export class FiscalConfigurationService implements OnModuleInit {
         this.logger.log('Datos del emisor actualizados');
 
         return this.getPublicConfiguration();
+    }
+
+    /**
+     * Valida un CUIT argentino usando el algoritmo módulo 11
+     * El CUIT tiene el formato XX-XXXXXXXX-X donde el último dígito es verificador
+     */
+    private validateCuit(cuit: string): { valid: boolean; error?: string } {
+        // Limpiar: solo dígitos
+        const cleanCuit = cuit.replace(/\D/g, '');
+
+        // Debe tener exactamente 11 dígitos
+        if (cleanCuit.length !== 11) {
+            return { valid: false, error: 'Debe tener exactamente 11 dígitos' };
+        }
+
+        // Algoritmo módulo 11 para validar el dígito verificador
+        const multipliers = [5, 4, 3, 2, 7, 6, 5, 4, 3, 2];
+        let sum = 0;
+
+        for (let i = 0; i < 10; i++) {
+            sum += parseInt(cleanCuit[i], 10) * multipliers[i];
+        }
+
+        const remainder = sum % 11;
+        const expectedVerifier = remainder === 0 ? 0 : remainder === 1 ? 9 : 11 - remainder;
+        const actualVerifier = parseInt(cleanCuit[10], 10);
+
+        if (expectedVerifier !== actualVerifier) {
+            return { valid: false, error: 'Dígito verificador incorrecto' };
+        }
+
+        // Validar tipo de CUIT (primeros 2 dígitos)
+        const tiposCuitValidos = ['20', '23', '24', '27', '30', '33', '34'];
+        const tipoCuit = cleanCuit.substring(0, 2);
+        if (!tiposCuitValidos.includes(tipoCuit)) {
+            return { valid: false, error: `Tipo de CUIT ${tipoCuit} no válido` };
+        }
+
+        return { valid: true };
     }
 
     /**
@@ -210,6 +257,7 @@ export class FiscalConfigurationService implements OnModuleInit {
      * Obtiene los certificados del entorno activo
      * Solo para uso interno del AfipService
      * NOTA: Los certificados se almacenan sin cifrado
+     * MEJORA: Valida vencimiento del certificado antes de retornarlo
      */
     async getDecryptedCertificates(): Promise<{
         certificate: string;
@@ -217,6 +265,7 @@ export class FiscalConfigurationService implements OnModuleInit {
     } | null> {
         const config = await this.getConfiguration();
         const isHomologacion = config.afipEnvironment === AfipEnvironment.HOMOLOGACION;
+        const environmentName = isHomologacion ? 'homologación' : 'producción';
 
         const cert = isHomologacion
             ? config.homologacionCertificate
@@ -224,14 +273,73 @@ export class FiscalConfigurationService implements OnModuleInit {
         const key = isHomologacion
             ? config.homologacionPrivateKey
             : config.produccionPrivateKey;
+        const expiresAt = isHomologacion
+            ? config.homologacionExpiresAt
+            : config.produccionExpiresAt;
 
         if (!cert || !key) {
             return null;
         }
 
+        // Validar vencimiento del certificado
+        if (expiresAt) {
+            const now = new Date();
+            const daysUntilExpiry = Math.ceil((expiresAt.getTime() - now.getTime()) / (1000 * 60 * 60 * 24));
+
+            if (daysUntilExpiry <= 0) {
+                this.logger.error(`¡CERTIFICADO VENCIDO! El certificado de ${environmentName} venció el ${expiresAt.toLocaleDateString()}.`);
+                throw new Error(
+                    `El certificado de ${environmentName} ha vencido el ${expiresAt.toLocaleDateString()}. ` +
+                    'Por favor, genere un nuevo certificado en AFIP y súbalo al sistema.'
+                );
+            }
+
+            if (daysUntilExpiry <= 7) {
+                this.logger.error(`¡URGENTE! El certificado de ${environmentName} vence en ${daysUntilExpiry} días (${expiresAt.toLocaleDateString()}).`);
+            } else if (daysUntilExpiry <= 15) {
+                this.logger.warn(`¡ALERTA! El certificado de ${environmentName} vence en ${daysUntilExpiry} días (${expiresAt.toLocaleDateString()}).`);
+            } else if (daysUntilExpiry <= 30) {
+                this.logger.log(`Recordatorio: El certificado de ${environmentName} vence en ${daysUntilExpiry} días.`);
+            }
+        }
+
         return {
             certificate: cert,
             privateKey: key,
+        };
+    }
+
+    /**
+     * Obtiene el estado de vencimiento de los certificados
+     * Útil para mostrar alertas en la UI
+     */
+    async getCertificateExpirationStatus(): Promise<{
+        homologacion: { expiresAt: Date | null; daysLeft: number | null; status: 'ok' | 'warning' | 'critical' | 'expired' | 'unknown' };
+        produccion: { expiresAt: Date | null; daysLeft: number | null; status: 'ok' | 'warning' | 'critical' | 'expired' | 'unknown' };
+    }> {
+        const config = await this.getConfiguration();
+        const now = new Date();
+
+        const getStatus = (expiresAt: Date | null): { expiresAt: Date | null; daysLeft: number | null; status: 'ok' | 'warning' | 'critical' | 'expired' | 'unknown' } => {
+            if (!expiresAt) {
+                return { expiresAt: null, daysLeft: null, status: 'unknown' };
+            }
+
+            const daysLeft = Math.ceil((expiresAt.getTime() - now.getTime()) / (1000 * 60 * 60 * 24));
+
+            if (daysLeft <= 0) {
+                return { expiresAt, daysLeft, status: 'expired' };
+            } else if (daysLeft <= 7) {
+                return { expiresAt, daysLeft, status: 'critical' };
+            } else if (daysLeft <= 30) {
+                return { expiresAt, daysLeft, status: 'warning' };
+            }
+            return { expiresAt, daysLeft, status: 'ok' };
+        };
+
+        return {
+            homologacion: getStatus(config.homologacionExpiresAt),
+            produccion: getStatus(config.produccionExpiresAt),
         };
     }
 

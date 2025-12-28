@@ -4,6 +4,35 @@
 import * as xml2js from 'xml2js';
 
 /**
+ * Obtiene el offset de timezone de Argentina en formato ISO 8601
+ * Argentina usa UTC-3 (America/Buenos_Aires) sin horario de verano desde 2009
+ * Se calcula dinámicamente por seguridad ante posibles cambios futuros
+ */
+function getArgentinaTimezoneOffset(): string {
+    // Crear una fecha en timezone de Argentina
+    const argentinaFormatter = new Intl.DateTimeFormat('en-US', {
+        timeZone: 'America/Buenos_Aires',
+        timeZoneName: 'shortOffset',
+    });
+
+    const parts = argentinaFormatter.formatToParts(new Date());
+    const tzPart = parts.find(p => p.type === 'timeZoneName');
+
+    if (tzPart?.value) {
+        // El formato es "GMT-3" o similar, convertir a "-03:00"
+        const match = tzPart.value.match(/GMT([+-])(\d+)/);
+        if (match) {
+            const sign = match[1];
+            const hours = match[2].padStart(2, '0');
+            return `${sign}${hours}:00`;
+        }
+    }
+
+    // Fallback: Argentina siempre es UTC-3
+    return '-03:00';
+}
+
+/**
  * Construye un XML de Ticket de Requerimiento de Acceso (TRA)
  * para autenticación con WSAA
  */
@@ -14,16 +43,34 @@ export function createTRA(service: string = 'wsfe'): string {
     // uniqueId: timestamp en segundos
     const uniqueId = Math.floor(now.getTime() / 1000);
 
-    // Formato ISO sin milisegundos usando hora local: YYYY-MM-DDTHH:mm:ss-03:00
-    const formatDate = (date: Date): string => {
-        const year = date.getFullYear();
-        const month = String(date.getMonth() + 1).padStart(2, '0');
-        const day = String(date.getDate()).padStart(2, '0');
-        const hours = String(date.getHours()).padStart(2, '0');
-        const minutes = String(date.getMinutes()).padStart(2, '0');
-        const seconds = String(date.getSeconds()).padStart(2, '0');
+    // Obtener timezone de Argentina dinámicamente
+    const tzOffset = getArgentinaTimezoneOffset();
 
-        return `${year}-${month}-${day}T${hours}:${minutes}:${seconds}-03:00`;
+    // Formato ISO sin milisegundos usando hora local Argentina: YYYY-MM-DDTHH:mm:ss-03:00
+    const formatDate = (date: Date): string => {
+        // Formatear la fecha en timezone de Argentina
+        const formatter = new Intl.DateTimeFormat('en-CA', {
+            timeZone: 'America/Buenos_Aires',
+            year: 'numeric',
+            month: '2-digit',
+            day: '2-digit',
+            hour: '2-digit',
+            minute: '2-digit',
+            second: '2-digit',
+            hour12: false,
+        });
+
+        const parts = formatter.formatToParts(date);
+        const get = (type: string) => parts.find(p => p.type === type)?.value || '00';
+
+        const year = get('year');
+        const month = get('month');
+        const day = get('day');
+        const hours = get('hour');
+        const minutes = get('minute');
+        const seconds = get('second');
+
+        return `${year}-${month}-${day}T${hours}:${minutes}:${seconds}${tzOffset}`;
     };
 
     const generationTime = formatDate(now);
@@ -65,7 +112,7 @@ export async function parseLoginCmsResponse(xmlResponse: string): Promise<{
     sign: string;
     expirationTime: Date;
 }> {
-    const parser = new xml2js.Parser({ 
+    const parser = new xml2js.Parser({
         explicitArray: false,
         ignoreAttrs: true,
         tagNameProcessors: [xml2js.processors.stripPrefix] // Elimina prefijos de namespace
@@ -87,9 +134,9 @@ export async function parseLoginCmsResponse(xmlResponse: string): Promise<{
 
     // Buscar loginCmsReturn en diferentes formatos
     const loginCmsResponse = body['loginCmsResponse'] || body['ns1:loginCmsResponse'];
-    const loginCmsReturn = body['loginCmsReturn'] || 
-                          loginCmsResponse?.['loginCmsReturn'] ||
-                          loginCmsResponse?.['return'];
+    const loginCmsReturn = body['loginCmsReturn'] ||
+        loginCmsResponse?.['loginCmsReturn'] ||
+        loginCmsResponse?.['return'];
 
     if (!loginCmsReturn) {
         // Verificar si hay un fault
@@ -103,9 +150,9 @@ export async function parseLoginCmsResponse(xmlResponse: string): Promise<{
     }
 
     // Parsear el XML interno de credentials
-    const credentialsParser = new xml2js.Parser({ 
+    const credentialsParser = new xml2js.Parser({
         explicitArray: false,
-        ignoreAttrs: true 
+        ignoreAttrs: true
     });
     const credentials = await credentialsParser.parseStringPromise(loginCmsReturn);
 
@@ -136,7 +183,7 @@ export async function parseLoginCmsResponse(xmlResponse: string): Promise<{
  */
 export async function parseSoapFault(xmlResponse: string): Promise<string> {
     try {
-        const parser = new xml2js.Parser({ 
+        const parser = new xml2js.Parser({
             explicitArray: false,
             ignoreAttrs: true,
             tagNameProcessors: [xml2js.processors.stripPrefix]

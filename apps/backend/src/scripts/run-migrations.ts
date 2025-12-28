@@ -27,15 +27,7 @@ import { StockMovement } from '../modules/inventory/entities/stock-movement.enti
 import { FiscalConfiguration } from '../modules/configuration/entities/fiscal-configuration.entity';
 import { CustomerAccount } from '../modules/customer-accounts/entities/customer-account.entity';
 import { AccountMovement } from '../modules/customer-accounts/entities/account-movement.entity';
-import { CreateCashRegisterTables1733079863000 } from '../migrations/1733079863000-CreateCashRegisterTables';
-import { CreateCashRegisterTotals1733100000000 } from '../migrations/1733100000000-CreateCashRegisterTotals';
-import { AddStockMovementSource1733100001000 } from '../migrations/1733100001000-AddStockMovementSource';
-import { CreateCustomerAccountsTables1733535600000 } from '../migrations/1733535600000-CreateCustomerAccountsTables';
-import { SeparateWsaaTokensByEnvironment1733866700000 } from '../migrations/1733866700000-SeparateWsaaTokensByEnvironment';
-import { CategoryProfitMarginAndManyToOne1733877600000 } from '../migrations/1733877600000-CategoryProfitMarginAndManyToOne';
-import { RemoveExpenseCategoryFields1734095590000 } from '../migrations/1734095590000-RemoveExpenseCategoryFields';
-import { AddDescriptionToProducts1734110000000 } from '../migrations/1734110000000-AddDescriptionToProducts';
-import { AddSistemaHabilitado1734310000000 } from '../migrations/1734310000000-AddSistemaHabilitado';
+import { InitialSchema1734450000000 } from '../migrations/1734450000000-InitialSchema';
 
 // Cargar variables de entorno
 config();
@@ -76,15 +68,7 @@ const dataSource = new DataSource({
         AccountMovement,
     ],
     migrations: [
-        CreateCashRegisterTables1733079863000,
-        CreateCashRegisterTotals1733100000000,
-        AddStockMovementSource1733100001000,
-        CreateCustomerAccountsTables1733535600000,
-        SeparateWsaaTokensByEnvironment1733866700000,
-        CategoryProfitMarginAndManyToOne1733877600000,
-        RemoveExpenseCategoryFields1734095590000,
-        AddDescriptionToProducts1734110000000,
-        AddSistemaHabilitado1734310000000,
+        InitialSchema1734450000000,
     ],
     synchronize: false,
     logging: true,

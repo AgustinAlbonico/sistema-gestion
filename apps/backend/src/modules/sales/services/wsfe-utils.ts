@@ -176,7 +176,8 @@ function toArray<T>(value: T | T[] | undefined | null): T[] {
 /** Extrae mensajes de error de la respuesta */
 function extractErrors(response: Record<string, unknown>): string[] {
     const errors: string[] = [];
-    const errList = toArray<{ Msg?: string }>(response.Errors?.Err as { Msg?: string }[] | { Msg?: string } | undefined);
+    const errorsObj = response.Errors as { Err?: { Msg?: string }[] | { Msg?: string } } | undefined;
+    const errList = toArray<{ Msg?: string }>(errorsObj?.Err);
     for (const err of errList) {
         if (err?.Msg) errors.push(err.Msg);
     }
@@ -186,9 +187,8 @@ function extractErrors(response: Record<string, unknown>): string[] {
 /** Extrae observaciones del detalle del comprobante */
 function extractObservations(detResponse: Record<string, unknown>): string[] {
     const observations: string[] = [];
-    const obsList = toArray<{ Code?: string; Msg?: string }>(
-        detResponse.Observaciones?.Obs as { Code?: string; Msg?: string }[] | undefined
-    );
+    const obsObj = detResponse.Observaciones as { Obs?: { Code?: string; Msg?: string }[] } | undefined;
+    const obsList = toArray<{ Code?: string; Msg?: string }>(obsObj?.Obs);
     for (const obs of obsList) {
         if (!obs?.Msg) continue;
         const codePrefix = obs.Code ? `[${obs.Code}] ` : '';
@@ -200,9 +200,8 @@ function extractObservations(detResponse: Record<string, unknown>): string[] {
 /** Extrae errores del detalle del comprobante */
 function extractDetailErrors(detResponse: Record<string, unknown>): string[] {
     const errors: string[] = [];
-    const errList = toArray<{ Code?: string; Msg?: string }>(
-        detResponse.Errores?.Err as { Code?: string; Msg?: string }[] | undefined
-    );
+    const errorsObj = detResponse.Errores as { Err?: { Code?: string; Msg?: string }[] } | undefined;
+    const errList = toArray<{ Code?: string; Msg?: string }>(errorsObj?.Err);
     for (const err of errList) {
         if (!err?.Msg) continue;
         const codePrefix = err.Code ? `[${err.Code}] ` : '';

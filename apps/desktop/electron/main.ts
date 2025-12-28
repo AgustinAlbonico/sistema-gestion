@@ -3,7 +3,7 @@ import { autoUpdater } from 'electron-updater';
 import * as path from 'node:path';
 import * as fs from 'node:fs';
 import * as http from 'node:http';
-import { spawn, ChildProcess, execSync } from 'node:child_process';
+import { spawn, fork, ChildProcess, execSync } from 'node:child_process';
 import log from 'electron-log';
 
 // ============================================
@@ -455,22 +455,6 @@ async function startBackend(): Promise<void> {
             return;
         }
 
-        // En desarrollo: npx ts-node, en producción: node directamente
-        let command: string;
-        let args: string[];
-
-        if (isDevMode) {
-            command = 'npx';
-            args = ['ts-node', '--transpile-only', mainFile];
-        } else {
-            // En producción, usar node del sistema
-            command = 'node';
-            args = [mainFile];
-        }
-
-        log.info(`[Electron] Comando: ${command} ${args.join(' ')}`);
-        log.info(`[Electron] CWD: ${backendDir}`);
-
         // Variables de entorno para el backend
         const backendEnv = {
             ...process.env,
@@ -495,14 +479,29 @@ async function startBackend(): Promise<void> {
         }));
 
         try {
-            backendProcess = spawn(command, args, {
-                cwd: backendDir,
-                env: backendEnv as NodeJS.ProcessEnv,
-                shell: true,
-                stdio: ['pipe', 'pipe', 'pipe'],
-                // En Windows, necesitamos windowsHide para evitar ventanas de consola
-                windowsHide: true,
-            });
+            if (isDevMode) {
+                // En desarrollo: usar npx ts-node
+                log.info(`[Electron] Comando: npx ts-node --transpile-only ${mainFile}`);
+                backendProcess = spawn('npx', ['ts-node', '--transpile-only', mainFile], {
+                    cwd: backendDir,
+                    env: backendEnv as NodeJS.ProcessEnv,
+                    shell: true,
+                    stdio: ['pipe', 'pipe', 'pipe'],
+                    windowsHide: true,
+                });
+            } else {
+                // En producción: usar fork() que usa el Node.js incluido en Electron
+                // fork() automáticamente usa el runtime de Node.js de Electron
+                log.info(`[Electron] Usando Node.js de Electron para ejecutar: ${mainFile}`);
+                backendProcess = fork(mainFile, [], {
+                    cwd: backendDir,
+                    env: backendEnv as NodeJS.ProcessEnv,
+                    stdio: ['pipe', 'pipe', 'pipe', 'ipc'],
+                    // En Windows, necesitamos windowsHide para evitar ventanas de consola
+                    silent: true,
+                    execArgv: ['--no-deprecation'], // Ocultar warnings de Node.js
+                }) as ChildProcess;
+            }
 
             log.info(`[Electron] Proceso backend iniciado con PID: ${backendProcess.pid}`);
         } catch (spawnError) {

@@ -95,7 +95,7 @@ export class AuthService {
             }
         }
 
-        const user = await this.usersService.create(dto);
+        const user = await this.usersService.create({ ...dto, isActive: true });
 
         return {
             id: user.id,

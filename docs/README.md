@@ -60,11 +60,14 @@
 
 ### "Quiero instalar NexoPOS en mi negocio"
 
-1. Lee [REQUISITOS-SISTEMA.md](./REQUISITOS-SISTEMA.md) → Sección "Producción (Usuario Final)"
-2. Instala PostgreSQL
+**Requisitos**: Solo PostgreSQL 14+ (Node.js está incluido en el instalador)
+
+1. Instala PostgreSQL
+2. Crea la base de datos `nexopos`
 3. Descarga y ejecuta `NexoPOS-Setup-1.0.4.exe`
 4. Completa el Setup Wizard
-5. Si tienes dudas: [tecnica/guia-instalacion.md](./tecnica/guia-instalacion.md)
+
+**¡Listo!** - Si tienes dudas: [tecnica/guia-instalacion.md](./tecnica/guia-instalacion.md)
 
 ### "Quiero desarrollar/modificar NexoPOS"
 

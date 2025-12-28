@@ -70,8 +70,10 @@ Documentación completa de los requisitos para ejecutar NexoPOS Desktop en desar
 | Software | Versión | Propósito | Incluido en Instalador |
 |----------|---------|-----------|------------------------|
 | **PostgreSQL** | 14.x+ | Base de datos | ❌ No (instalación separada) |
-| **Node.js** | 25.x | Runtime | ✅ Sí (bundleado en Electron) |
+| **Node.js** | 25.x | Runtime del backend | ✅ Sí (incluido en Electron) |
 | **NexoPOS Desktop** | 1.0.4+ | Aplicación | ✅ Sí (instalador .exe) |
+
+> **Nota**: Node.js está incluido dentro del runtime de Electron. El usuario final NO necesita instalar Node.js por separado.
 
 ---
 
@@ -118,10 +120,16 @@ Ninguna extensión adicional es requerida. El sistema usa PostgreSQL estándar.
 
 ### 2. Node.js
 
-#### Instalación en Windows
+#### Para Usuario Final (Producción)
+
+**NO ES NECESARIO INSTALAR Node.js** - está incluido dentro de Electron.
+
+El instalador de NexoPOS incluye el runtime de Node.js (versión 25.x) dentro del paquete de Electron, por lo que el usuario final no necesita instalarlo por separado.
+
+#### Para Desarrollo
 
 1. Descargar de [nodejs.org](https://nodejs.org/)
-2. Instalar la versión LTS (Long Term Support)
+2. Instalar la versión LTS (Long Term Support) - 18.x o 20.x
 3. Verificar instalación:
 
 ```powershell
@@ -129,7 +137,7 @@ node --version  # Debe mostrar v18.x.x o v20.x.x
 npm --version   # Debe mostrar 9.x.x o 10.x.x
 ```
 
-#### Configuración de npm (Opcional)
+#### Configuración de npm (Opcional para Desarrollo)
 
 ```powershell
 # Configurar cache de npm en disco local
@@ -563,6 +571,8 @@ Reiniciar la aplicación y presionar `F12` para abrir Chrome DevTools.
 - [ ] Setup Wizard completado
 - [ ] Aplicación inicia sin errores
 - [ ] Login funciona correctamente
+
+> **Nota**: Node.js NO necesita ser instalado - está incluido en el instalador.
 
 ---
 

@@ -4,20 +4,31 @@ Guía rápida para poner en marcha NexoPOS en 5 minutos.
 
 ## ✅ Lo que necesitás (checklist)
 
-### Software Requerido
-
-- [ ] **PostgreSQL 14+** (instalado y corriendo)
-- [ ] **Node.js 18.x o 20.x** (solo para desarrollo)
-- [ ] **Git** (solo para desarrollo)
-
 ### Usuario Final (Producción)
 
-Solo necesitás:
-1. PostgreSQL instalado
-2. Descargar `NexoPOS-Setup-1.0.4.exe`
-3. Ejecutar el instalador
+- [ ] **PostgreSQL 14+** (instalado y corriendo)
+- [ ] **NexoPOS-Setup-1.0.4.exe** (descargado)
+
+**¡ESO ES TODO!** Node.js está incluido en el instalador.
+
+### Desarrollo
+
+- [ ] **PostgreSQL 14+** (instalado y corriendo)
+- [ ] **Node.js 18.x o 20.x** (para compilar y desarrollar)
+- [ ] **Git** (para clonar el repositorio)
+
+---
+
+### Usuario Final (Producción) - Pasos
+
+1. Instalar PostgreSQL
+2. Crear base de datos `nexopos`
+3. Descargar `NexoPOS-Setup-1.0.4.exe`
+4. Ejecutar el instalador
 
 **Listo**. El Setup Wizard te guía en el resto.
+
+> **Importante**: NO necesitás instalar Node.js por separado. Está incluido en Electron.
 
 ---
 

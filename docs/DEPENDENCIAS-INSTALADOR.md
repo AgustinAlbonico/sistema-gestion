@@ -9,6 +9,33 @@ Cuando empaquetamos la aplicación con `electron-builder`, necesitamos incluir t
 1. **Dependencias de Electron** (main process): `electron-updater`, `electron-log`, etc.
 2. **Dependencias del Backend**: `express`, `pg` y todas sus subdependencias transitivas
 
+## Arquitectura del Backend
+
+### Ejecución del Backend
+
+**En Producción**: El backend se ejecuta usando el **Node.js incluido en Electron** mediante `child_process.fork()`. Esto significa que:
+- ✅ El usuario final NO necesita instalar Node.js
+- ✅ El runtime es consistente (Node.js 25.x de Electron 30)
+- ✅ No hay problemas de versiones de Node.js
+
+**En Desarrollo**: El backend se ejecuta con `npx ts-node` del Node.js del sistema para hot-reload.
+
+### Código Relevante
+
+```typescript
+// apps/desktop/electron/main.ts (línea ~460)
+if (isDevMode) {
+    // Desarrollo: usar ts-node del sistema
+    backendProcess = spawn('npx', ['ts-node', '--transpile-only', mainFile], {...});
+} else {
+    // Producción: usar Node.js de Electron con fork()
+    backendProcess = fork(mainFile, [], {
+        execArgv: ['--no-deprecation'],
+        ...
+    });
+}
+```
+
 ## Solución Implementada
 
 ### 1. Dependencias de Electron (Main Process)
@@ -182,7 +209,28 @@ node scripts/copy-backend-deps.js
 - **Dependencias de Electron**: ~5 MB
 - **Dependencias del Backend**: ~8 MB
 - **Frontend**: ~3 MB
+- **Node.js runtime**: Incluido en Electron (~0 MB adicional)
 - **Total aproximado**: ~30-35 MB (comprimido con NSIS)
+
+## Requisitos de Sistema
+
+### Usuario Final (Producción)
+
+| Componente | ¿Necesita instalación separada? | Incluido en instalador |
+|------------|----------------------------------|------------------------|
+| PostgreSQL 14+ | ✅ SÍ | ❌ No |
+| Node.js | ❌ NO | ✅ Sí (en Electron) |
+| NexoPOS Desktop | ❌ NO (es el instalador) | ✅ Sí |
+
+**El usuario final solo necesita instalar PostgreSQL.**
+
+### Desarrollo
+
+| Componente | ¿Necesita instalación? |
+|------------|----------------------|
+| PostgreSQL 14+ | ✅ SÍ |
+| Node.js 18.x/20.x | ✅ SÍ (para compilar) |
+| Git | ✅ SÍ (para clonar repo) |
 
 ## Troubleshooting
 
@@ -202,6 +250,25 @@ node scripts/copy-backend-deps.js
    - Copiar la salida al `electron-builder.yml` en la sección `extraResources`
    - Reconstruir el instalador
 
+### Error: "node: command not found" o "npm: command not found"
+
+**En Producción (usuario final):**
+
+**Causa:** Error en el código - el sistema intenta usar Node.js del sistema en lugar del de Electron.
+
+**Solución:** Verificar que `main.ts` use `fork()` en producción:
+```typescript
+if (!isDevMode) {
+    backendProcess = fork(mainFile, [], {...});
+}
+```
+
+**En Desarrollo:**
+
+**Causa:** Node.js no está instalado en el sistema.
+
+**Solución:** Instalar Node.js 18.x o 20.x LTS desde [nodejs.org](https://nodejs.org)
+
 ### Verificar qué se incluyó en el instalador
 
 ```bash
@@ -217,29 +284,69 @@ ls resources/backend/node_modules
 
 ## Notas Importantes
 
-1. **No usar webpack para Express/PG**: Estas librerías tienen dependencias nativas y dinámicas que no se pueden bundlear correctamente.
+1. **Node.js está incluido**: El runtime de Node.js (v25.x) está incluido en Electron, por lo que el usuario final NO necesita instalarlo.
 
-2. **Mantener electron-builder.yml actualizado**: Si cambian las dependencias, regenerar con `copy-backend-deps.js`.
+2. **fork() vs spawn()**: En producción usamos `fork()` en lugar de `spawn('node', ...)` para aprovechar el Node.js de Electron.
 
-3. **Versiones críticas**:
+3. **No usar webpack para Express/PG**: Estas librerías tienen dependencias nativas y dinámicas que no se pueden bundlear correctamente.
+
+4. **Mantener electron-builder.yml actualizado**: Si cambian las dependencias, regenerar con `copy-backend-deps.js`.
+
+5. **Versiones críticas**:
+   - `electron@30.0.0` → Incluye Node.js 25.x
    - `electron-updater@6.6.2` → Requiere `js-yaml`, `lodash.escaperegexp`
    - `express@4.22.1` → Requiere 25 dependencias directas + transitivas
    - `pg@8.16.3` → Requiere 8 dependencias directas + transitivas
 
-4. **ASAR y unpacking**: Las dependencias de Electron están en `app.asar`, los módulos nativos (como `.node`) se desempaquetan automáticamente.
+6. **ASAR y unpacking**: Las dependencias de Electron están en `app.asar`, los módulos nativos (como `.node`) se desempaquetan automáticamente.
 
 ## Historial de Errores Resueltos
 
-| Error | Módulo Faltante | Solución |
-|-------|-----------------|----------|
-| `Cannot find module 'electron-updater'` | electron-updater | Agregar a files en electron-builder.yml |
-| `Cannot find module 'js-yaml'` | js-yaml | Dependencia de electron-updater 6.x |
-| `Cannot find module 'array-flatten'` | array-flatten | Dependencia de express |
-| `Cannot find module 'side-channel-list'` | side-channel-list | Dependencia de qs (usado por express) |
+| Fecha | Error | Módulo Faltante | Solución |
+|-------|-------|-----------------|----------|
+| 2024-12-22 | `Cannot find module 'electron-updater'` | electron-updater | Agregar a files en electron-builder.yml |
+| 2024-12-22 | `Cannot find module 'js-yaml'` | js-yaml | Dependencia de electron-updater 6.x |
+| 2024-12-22 | `Cannot find module 'array-flatten'` | array-flatten | Dependencia de express |
+| 2024-12-22 | `Cannot find module 'side-channel-list'` | side-channel-list | Dependencia de qs (usado por express) |
+| 2024-12-22 | Usuario necesita instalar Node.js | - | Cambiar a `fork()` para usar Node.js de Electron |
+
+## Arquitectura de Ejecución
+
+```
+┌─────────────────────────────────────────┐
+│         NexoPOS.exe                     │
+│  (Electron 30 + Node.js 25.x incluido)  │
+└─────────────────────────────────────────┘
+              │
+              ├─── Main Process (Electron)
+              │    │
+              │    ├─── electron/main.ts
+              │    │    │
+              │    │    └─── fork() ──────────┐
+              │    │                           │
+              │    └─── Auto-updater           │
+              │         PDF Generator          │
+              │                                 ▼
+              │                    ┌─────────────────────────┐
+              │                    │  Backend (NestJS)       │
+              │                    │  Ejecutado con Node.js  │
+              │                    │  de Electron (fork)     │
+              │                    └─────────────────────────┘
+              │                                 │
+              │                                 ▼
+              │                    ┌─────────────────────────┐
+              │                    │  PostgreSQL             │
+              │                    │  (instalación separada) │
+              │                    └─────────────────────────┘
+              │
+              └─── Renderer Process
+                   │
+                   └─── React Frontend
+```
 
 ## Última Actualización
 
 **Fecha:** 22 de diciembre de 2024  
 **Versión de NexoPOS:** 1.0.4  
-**Total de dependencias incluidas:** 97 (17 Electron + 80 Backend)
-
+**Total de dependencias incluidas:** 97 (17 Electron + 80 Backend)  
+**Node.js requerido para usuario final:** ❌ NO (incluido en Electron)
