@@ -166,8 +166,9 @@ export class InitialSchema1734450000000 implements MigrationInterface {
                 "creditLimit" numeric(12,2) NOT NULL DEFAULT '0',
                 "status" "customer_accounts_status_enum" NOT NULL DEFAULT 'active',
                 "daysOverdue" integer NOT NULL DEFAULT 0,
-                "lastPaymentDate" date,
-                "lastPurchaseDate" date,
+                "paymentTermDays" integer NOT NULL DEFAULT 30,
+                "lastPaymentDate" timestamp without time zone,
+                "lastPurchaseDate" timestamp without time zone,
                 "createdAt" timestamp without time zone NOT NULL DEFAULT now(),
                 "updatedAt" timestamp without time zone NOT NULL DEFAULT now(),
                 "deletedAt" timestamp without time zone,
@@ -837,6 +838,8 @@ export class InitialSchema1734450000000 implements MigrationInterface {
         await queryRunner.query(`CREATE INDEX "IDX_1896ae681cf45b65c30ac4d75d" ON public.account_movements USING btree ("createdAt")`);
         await queryRunner.query(`CREATE INDEX "IDX_318dacc6ac49989ce28297553a" ON public.account_movements USING btree ("movementType")`);
         await queryRunner.query(`CREATE INDEX "IDX_6f5c93a631fe50545d103f37bd" ON public.account_movements USING btree ("referenceType", "referenceId")`);
+        // Mejora #2: Índice único parcial para evitar duplicados
+        await queryRunner.query(`CREATE UNIQUE INDEX "IDX_account_movements_unique_reference" ON "account_movements" ("accountId", "referenceType", "referenceId") WHERE "referenceId" IS NOT NULL`);
         await queryRunner.query(`CREATE INDEX "IDX_dae89f38e90f02a194f57608f5" ON public.account_movements USING btree ("accountId")`);
         await queryRunner.query(`CREATE INDEX "IDX_7421efc125d95e413657efa3c6" ON public.audit_logs USING btree (entity_type, entity_id)`);
         await queryRunner.query(`CREATE INDEX "IDX_88dcc148d532384790ab874c3d" ON public.audit_logs USING btree ("timestamp")`);
@@ -844,6 +847,8 @@ export class InitialSchema1734450000000 implements MigrationInterface {
         await queryRunner.query(`CREATE INDEX "IDX_cee5459245f652b75eb2759b4c" ON public.audit_logs USING btree (action)`);
         await queryRunner.query(`CREATE INDEX "IDX_8b0be371d28245da6e4f4b6187" ON public.categories USING btree (name)`);
         await queryRunner.query(`CREATE INDEX "IDX_7f67e3035731ad5aeb12af7376" ON public.customer_accounts USING btree ("daysOverdue")`);
+        // Mejora #8: Índice para plazo de pago
+        await queryRunner.query(`CREATE INDEX "IDX_customer_accounts_paymentTermDays" ON "customer_accounts" ("paymentTermDays")`);
         await queryRunner.query(`CREATE INDEX "IDX_aa4ad1331507e75eca55689ed2" ON public.customer_accounts USING btree (balance)`);
         await queryRunner.query(`CREATE INDEX "IDX_dd4af5e4a911ce718820caff37" ON public.customer_accounts USING btree (status)`);
         await queryRunner.query(`CREATE INDEX "IDX_c3a9318c56cf9f9e4eb9d1b0ef" ON public.customer_categories USING btree ("isActive")`);

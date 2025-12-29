@@ -13,7 +13,6 @@ import {
     Trash2,
     CheckCircle,
     XCircle,
-    Clock,
     Loader2,
     ArrowLeft,
     FolderOpen,
@@ -74,8 +73,6 @@ function StatusIcon({ status }: Readonly<{ status: BackupStatus }>) {
             return <CheckCircle className="h-5 w-5 text-green-500" />;
         case BackupStatus.FAILED:
             return <XCircle className="h-5 w-5 text-red-500" />;
-        case BackupStatus.PENDING:
-            return <Clock className="h-5 w-5 text-yellow-500" />;
         default:
             return null;
     }
@@ -111,6 +108,7 @@ export default function BackupPage() {
         mutationFn: backupApi.create,
         onSuccess: () => {
             queryClient.invalidateQueries({ queryKey: ['backups'] });
+            queryClient.invalidateQueries({ queryKey: ['backup-status'] });
             toast.success('Backup creado exitosamente');
             setIsCreateDialogOpen(false);
             setSelectedOption('default');
@@ -311,11 +309,6 @@ export default function BackupPage() {
                                                 {backup.status === BackupStatus.FAILED && (
                                                     <span className="text-[10px] sm:text-xs text-red-600 bg-red-100 dark:bg-red-900/30 px-1.5 sm:px-2 py-0.5 rounded">
                                                         Fallido
-                                                    </span>
-                                                )}
-                                                {backup.status === BackupStatus.PENDING && (
-                                                    <span className="text-[10px] sm:text-xs text-yellow-600 bg-yellow-100 dark:bg-yellow-900/30 px-1.5 sm:px-2 py-0.5 rounded">
-                                                        En proceso
                                                     </span>
                                                 )}
                                             </div>

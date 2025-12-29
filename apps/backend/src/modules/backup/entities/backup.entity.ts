@@ -9,7 +9,6 @@ import {
 } from 'typeorm';
 
 export enum BackupStatus {
-    PENDING = 'pending',
     COMPLETED = 'completed',
     FAILED = 'failed',
 }
@@ -31,7 +30,7 @@ export class Backup {
     @Column({
         type: 'enum',
         enum: BackupStatus,
-        default: BackupStatus.PENDING,
+        default: BackupStatus.COMPLETED,
     })
     status!: BackupStatus;
 

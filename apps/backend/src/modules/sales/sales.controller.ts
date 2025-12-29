@@ -57,6 +57,15 @@ export class SalesController {
     }
 
     /**
+     * FIX 1.1: Verifica si se puede crear una venta
+     * Retorna el estado de la caja y si está habilitado para vender
+     */
+    @Get('can-create')
+    async canCreate(): Promise<{ canCreate: boolean; reason?: string }> {
+        return this.salesService.canCreateSale();
+    }
+
+    /**
      * Obtiene ventas del día actual
      */
     @Get('today')

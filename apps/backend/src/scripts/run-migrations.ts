@@ -29,8 +29,10 @@ import { CustomerAccount } from '../modules/customer-accounts/entities/customer-
 import { AccountMovement } from '../modules/customer-accounts/entities/account-movement.entity';
 import { InitialSchema1734450000000 } from '../migrations/1734450000000-InitialSchema';
 
-// Cargar variables de entorno
-config();
+import * as path from 'path';
+
+// Cargar variables de entorno desde la raíz del proyecto
+config({ path: path.join(__dirname, '../../../../.env') });
 
 const dataSource = new DataSource({
     type: 'postgres',

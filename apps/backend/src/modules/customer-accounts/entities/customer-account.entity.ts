@@ -72,15 +72,22 @@ export class CustomerAccount {
     daysOverdue!: number;
 
     /**
-     * Última fecha de pago
+     * Plazo de pago en días (para cálculo de mora real)
+     * Por defecto 30 días desde la fecha de cargo
      */
-    @Column({ type: 'date', nullable: true })
+    @Column({ type: 'int', default: 30 })
+    paymentTermDays!: number;
+
+    /**
+     * Última fecha de pago (incluye hora para mostrar tiempo exacto)
+     */
+    @Column({ type: 'timestamp', nullable: true })
     lastPaymentDate!: Date | null;
 
     /**
-     * Última fecha de compra/cargo
+     * Última fecha de compra/cargo (incluye hora para mostrar tiempo exacto)
      */
-    @Column({ type: 'date', nullable: true })
+    @Column({ type: 'timestamp', nullable: true })
     lastPurchaseDate!: Date | null;
 
     /**

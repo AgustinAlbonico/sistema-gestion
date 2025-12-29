@@ -20,10 +20,12 @@ export const saleItemSchema = z.object({
 
 /**
  * Schema para pago de venta
+ * Nota: Se permite amount >= 0 aquí porque la validación de montos > 0
+ * se hace a nivel de createSaleSchema según isOnAccount
  */
 export const salePaymentSchema = z.object({
     paymentMethod: z.nativeEnum(PaymentMethod),
-    amount: z.number().min(0.01, 'El monto debe ser mayor a 0'),
+    amount: z.number().min(0, 'El monto debe ser mayor o igual a 0'),
     installments: z.number().min(1).optional(),
     cardLastFourDigits: z.string().max(4).optional(),
     authorizationCode: z.string().optional(),
@@ -70,6 +72,19 @@ export const createSaleSchema = z
         {
             message: 'Debe seleccionar un cliente para venta en cuenta corriente',
             path: ['isOnAccount'],
+        }
+    )
+    .refine(
+        (data) => {
+            // Si NO es cuenta corriente, los pagos deben tener monto > 0
+            if (!data.isOnAccount && data.payments) {
+                return data.payments.every((p) => p.amount > 0);
+            }
+            return true;
+        },
+        {
+            message: 'Todos los pagos deben tener un monto mayor a 0',
+            path: ['payments'],
         }
     );
 

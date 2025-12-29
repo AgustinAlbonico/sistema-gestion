@@ -129,6 +129,21 @@ export class SalesService {
     }
 
     /**
+     * Valida que no haya impuestos duplicados por nombre
+     * FIX 7.8: Impuestos duplicados
+     */
+    private validateNoDuplicateTaxes(taxes?: CreateSaleDto['taxes']): void {
+        if (!taxes || taxes.length === 0) return;
+        const names = taxes.map(t => t.name.toLowerCase().trim());
+        const uniqueNames = new Set(names);
+        if (names.length !== uniqueNames.size) {
+            throw new BadRequestException(
+                'No se permiten impuestos duplicados en la misma venta. Verifique los impuestos seleccionados.'
+            );
+        }
+    }
+
+    /**
      * Crea los items de la venta
      */
     private async createSaleItems(
@@ -222,6 +237,21 @@ export class SalesService {
     // ============ Métodos públicos ============
 
     /**
+     * FIX 1.1: Verifica si se puede crear una venta
+     * Útil para que el frontend verifique antes de cargar el formulario
+     */
+    async canCreateSale(): Promise<{ canCreate: boolean; reason?: string }> {
+        const openCashRegister = await this.cashRegisterService.getOpenRegister();
+        if (!openCashRegister) {
+            return {
+                canCreate: false,
+                reason: 'No hay caja abierta. Debe abrir la caja antes de registrar ventas.'
+            };
+        }
+        return { canCreate: true };
+    }
+
+    /**
      * Crea una nueva venta
      */
     async create(dto: CreateSaleDto, userId?: string): Promise<Sale> {
@@ -245,13 +275,16 @@ export class SalesService {
         // Validar pagos
         this.validatePayments(dto, total);
 
+        // Validar impuestos duplicados (FIX 7.8)
+        this.validateNoDuplicateTaxes(dto.taxes);
+
         const queryRunner = this.dataSource.createQueryRunner();
         await queryRunner.connect();
         await queryRunner.startTransaction();
 
         try {
-            // Generar número de venta
-            const saleNumber = await this.generateSaleNumber();
+            // Generar número de venta dentro de la transacción (FIX 1.2: Race condition)
+            const saleNumber = await this.generateSaleNumberTransactional(queryRunner.manager);
 
             // Crear venta
             const sale = this.saleRepo.create({
@@ -562,6 +595,7 @@ export class SalesService {
 
     /**
      * Cancela una venta
+     * Mejora #3 QA: Si la venta era a cuenta corriente, revierte el cargo en la cuenta
      */
     async cancel(id: string, userId?: string): Promise<Sale> {
         const sale = await this.findOne(id);
@@ -575,6 +609,52 @@ export class SalesService {
         if (sale.inventoryUpdated) {
             await this.revertInventoryFromSale(sale);
             sale.inventoryUpdated = false;
+        }
+
+        // Mejora #3: Reversión financiera
+        if (sale.isOnAccount && sale.customerId) {
+            // Caso 1: Venta a Cuenta Corriente -> Ajuste en saldo del cliente
+            try {
+                await this.customerAccountsService.createAdjustment(
+                    sale.customerId,
+                    {
+                        amount: -Number(sale.total), // Monto negativo = crédito/reversión
+                        description: `Anulación de venta ${sale.saleNumber}`,
+                        referenceType: 'sale_cancellation',
+                        referenceId: sale.id,
+                        notes: `Venta cancelada por usuario`,
+                    },
+                    userId,
+                );
+                console.log(`[Ventas] Cargo revertido en cuenta corriente del cliente ${sale.customerId}`);
+            } catch (adjustError) {
+                console.warn(`[Ventas] No se pudo revertir cargo en cuenta: ${(adjustError as Error).message}`);
+            }
+        } else {
+            // Caso 2: Venta de Contado/Pagada -> Devolución en Caja
+            // Iterar sobre los pagos registrados para devolver en el mismo medio de pago
+            if (sale.payments && sale.payments.length > 0) {
+                for (const payment of sale.payments) {
+                    try {
+                        await this.cashRegisterService.registerRefund(
+                            {
+                                amount: Number(payment.amount),
+                                paymentMethodId: payment.paymentMethodId,
+                                description: `Devolución Venta ${sale.saleNumber}`,
+                                referenceId: sale.id,
+                            },
+                            userId || 'system',
+                        );
+                    } catch (refundError) {
+                        console.warn(`[Ventas] No se pudo registrar devolución en caja para pago ${payment.id}: ${(refundError as Error).message}`);
+                        // No bloqueamos la cancelación, pero alertamos
+                    }
+                }
+            } else if (!sale.isOnAccount) {
+                // Fallback: Si no hay pagos registrados pero la venta no es CC (ej. migraciones viejas o inconsistencias),
+                // intentar devolver el total como efectivo o loguear warning.
+                console.warn(`[Ventas] Venta ${sale.saleNumber} cancelada es de contado pero no tiene pagos registrados. No se generó devolución automática.`);
+            }
         }
 
         sale.status = SaleStatus.CANCELLED;
@@ -884,6 +964,7 @@ export class SalesService {
 
     /**
      * Genera número de venta único
+     * @deprecated Use generateSaleNumberTransactional para evitar race conditions
      */
     private async generateSaleNumber(): Promise<string> {
         const year = new Date().getFullYear();
@@ -894,6 +975,36 @@ export class SalesService {
 
         const nextNumber = (count + 1).toString().padStart(5, '0');
         return `VENTA-${year}-${nextNumber}`;
+    }
+
+    /**
+     * Genera número de venta único dentro de una transacción
+     * FIX 1.2: Evita race condition usando FOR UPDATE
+     */
+    private async generateSaleNumberTransactional(manager: EntityManager): Promise<string> {
+        const year = new Date().getFullYear();
+        const prefix = `VENTA-${year}-`;
+
+        // Usar query raw con FOR UPDATE para bloquear la fila durante la lectura
+        // NOTA: En PostgreSQL, los nombres de columna van entre comillas dobles si son camelCase
+        const result = await manager.query(`
+            SELECT "saleNumber" FROM sales 
+            WHERE "saleNumber" LIKE $1 
+            ORDER BY "saleNumber" DESC 
+            LIMIT 1 
+            FOR UPDATE
+        `, [`${prefix}%`]);
+
+        let nextNumber = 1;
+        if (result.length > 0) {
+            const lastNumber = result[0].saleNumber;
+            const match = lastNumber.match(/VENTA-\d{4}-(\d+)/);
+            if (match) {
+                nextNumber = parseInt(match[1], 10) + 1;
+            }
+        }
+
+        return `${prefix}${String(nextNumber).padStart(5, '0')}`;
     }
 }
 

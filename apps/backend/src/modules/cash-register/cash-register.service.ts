@@ -831,6 +831,71 @@ export class CashRegisterService {
     }
 
     /**
+     * Registrar devolución de venta (Refund)
+     * Se registra como un egreso manual vinculado a la venta
+     */
+    async registerRefund(
+        data: {
+            amount: number;
+            paymentMethodId: string;
+            description: string;
+            referenceId?: string;
+        },
+        userId: string,
+    ): Promise<CashMovement> {
+        const cashRegister = await this.getOpenRegister();
+
+        if (!cashRegister) {
+            throw new BadRequestException('No hay caja abierta para registrar la devolución');
+        }
+
+        const amount = Math.abs(data.amount);
+        const isValidUUID = userId && userId !== 'system' && /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i.test(userId);
+
+        // Insertar movimiento manual de tipo GASTO
+        const result = await this.dataSource.query(
+            `INSERT INTO cash_movements 
+                (cash_register_id, "movementType", "referenceType", "referenceId", "manualDescription", "manualAmount", "manual_payment_method_id", created_by)
+             VALUES ($1, $2, $3, $4, $5, $6, $7, $8)
+             RETURNING *`,
+            [
+                cashRegister.id,
+                MovementType.EXPENSE,
+                'manual',
+                data.referenceId || null,
+                data.description,
+                amount,
+                data.paymentMethodId,
+                isValidUUID ? userId : null
+            ]
+        );
+
+        const savedMovement = result[0];
+
+        // Actualizar totales de caja
+        await this.cashRegisterRepo.update(
+            { id: cashRegister.id },
+            { totalExpense: Number(cashRegister.totalExpense) + amount }
+        );
+
+        // Actualizar totales por método de pago
+        const paymentMethodEntity = await this.paymentMethodRepo.findOneBy({ id: data.paymentMethodId });
+
+        if (paymentMethodEntity) {
+            await this.updatePaymentMethodTotal(
+                cashRegister.id,
+                paymentMethodEntity,
+                amount,
+                'expense',
+            );
+        }
+
+        console.log(`[CashRegister] Devolución registrada: $${amount} - ${data.description}`);
+
+        return savedMovement;
+    }
+
+    /**
      * Actualizar totales por método de pago
      */
     private async updatePaymentMethodTotal(

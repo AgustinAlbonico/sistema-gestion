@@ -100,8 +100,8 @@ export default function SalesPage() {
             queryClient.invalidateQueries({ queryKey: ['inventory'] });
             // Invalidar cuentas corrientes si es venta a cuenta
             if (newSale.isOnAccount) {
+                // Invalidar todas las queries de cuentas corrientes para refrescar la data
                 queryClient.invalidateQueries({ queryKey: ['customer-accounts'] });
-                queryClient.invalidateQueries({ queryKey: ['accounts-stats'] });
             }
             toast.success('Venta registrada exitosamente');
             setIsCreateOpen(false);

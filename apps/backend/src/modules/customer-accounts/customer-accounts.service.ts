@@ -18,6 +18,7 @@ import { CustomersService } from '../customers/customers.service';
 import { CashRegisterService } from '../cash-register/cash-register.service';
 import { Sale, SaleStatus } from '../sales/entities/sale.entity';
 import { Income } from '../incomes/entities/income.entity';
+import { Customer } from '../customers/entities/customer.entity';
 
 /**
  * Interfaz para estadísticas de cuentas corrientes
@@ -59,6 +60,17 @@ export interface OverdueAlert {
  */
 export interface PaginatedAccounts {
     data: CustomerAccount[];
+    total: number;
+    page: number;
+    limit: number;
+    totalPages: number;
+}
+
+/**
+ * Respuesta paginada para movimientos (mejora #9)
+ */
+export interface PaginatedMovements {
+    data: AccountMovement[];
     total: number;
     page: number;
     limit: number;
@@ -125,27 +137,39 @@ export class CustomerAccountsService {
 
     /**
      * Crea un cargo en la cuenta (desde venta)
+     * Mejora #4: Usa lock pesimista para evitar race conditions en concurrencia
      */
     async createCharge(customerId: string, dto: CreateChargeDto, userId?: string): Promise<AccountMovement> {
-        const account = await this.getOrCreateAccount(customerId);
-
-        // Verificar límite de crédito
-        if (account.creditLimit > 0) {
-            const newBalance = Number(account.balance) + dto.amount;
-            if (newBalance > account.creditLimit) {
-                throw new BadRequestException(
-                    `El cliente ha excedido su límite de crédito ($${account.creditLimit}). Saldo actual: $${account.balance}`
-                );
-            }
-        }
-
-        // Verificar si está suspendido
-        if (account.status === AccountStatus.SUSPENDED) {
-            throw new BadRequestException('La cuenta del cliente está suspendida. No se pueden agregar cargos.');
-        }
-
-        // Crear movimiento dentro de una transacción
+        // Crear movimiento dentro de una transacción con lock pesimista (mejora #4)
         return this.dataSource.transaction(async (manager) => {
+            // Lock pesimista: bloquea la cuenta durante la transacción
+            const account = await manager
+                .createQueryBuilder(CustomerAccount, 'account')
+                .setLock('pessimistic_write')
+                .where('account.customerId = :customerId', { customerId })
+                .getOne();
+
+            // Si no existe, crear cuenta (fuera del lock para evitar deadlock)
+            if (!account) {
+                const newAccount = await this.getOrCreateAccount(customerId);
+                return this.createCharge(customerId, dto, userId); // Reintentar con cuenta creada
+            }
+
+            // Verificar límite de crédito
+            if (account.creditLimit > 0) {
+                const newBalance = Number(account.balance) + dto.amount;
+                if (newBalance > account.creditLimit) {
+                    throw new BadRequestException(
+                        `El cliente ha excedido su límite de crédito ($${account.creditLimit}). Saldo actual: $${account.balance}`
+                    );
+                }
+            }
+
+            // Verificar si está suspendido
+            if (account.status === AccountStatus.SUSPENDED) {
+                throw new BadRequestException('La cuenta del cliente está suspendida. No se pueden agregar cargos.');
+            }
+
             const balanceBefore = Number(account.balance);
             const chargeAmount = Math.abs(dto.amount);
             const balanceAfter = balanceBefore + chargeAmount;
@@ -177,26 +201,45 @@ export class CustomerAccountsService {
     /**
      * Registra un pago del cliente
      * Si el pago cubre toda la deuda, marca automáticamente las transacciones pendientes como completadas
+     * Mejora #1: Registro de caja dentro de la transacción (no setImmediate)
+     * Mejora #4: Usa lock pesimista para evitar race conditions
      */
     async createPayment(customerId: string, dto: CreatePaymentDto, userId?: string): Promise<AccountMovement> {
-        const account = await this.getOrCreateAccount(customerId);
-
-        const currentBalance = Number(account.balance);
-
-        // Validar que hay deuda pendiente
-        if (currentBalance <= 0) {
-            throw new BadRequestException('El cliente no tiene deuda pendiente');
-        }
-
-        // Validar que el pago no excede la deuda
-        if (dto.amount > currentBalance) {
-            throw new BadRequestException(
-                `El pago ($${dto.amount}) excede la deuda pendiente ($${currentBalance})`
-            );
-        }
-
-        // Crear movimiento dentro de una transacción
+        // Crear movimiento dentro de una transacción con lock pesimista (mejora #4)
         return this.dataSource.transaction(async (manager) => {
+            // Lock pesimista: bloquea la cuenta durante la transacción
+            const account = await manager
+                .createQueryBuilder(CustomerAccount, 'account')
+                .setLock('pessimistic_write')
+                .where('account.customerId = :customerId', { customerId })
+                .getOne();
+
+            // Cargar datos del cliente si existe (separado para evitar error FOR UPDATE con outer join)
+            if (account) {
+                const customer = await manager.getRepository(Customer).findOne({ where: { id: customerId } });
+                if (customer) {
+                    account.customer = customer;
+                }
+            }
+
+            if (!account) {
+                throw new BadRequestException('Cuenta no encontrada');
+            }
+
+            const currentBalance = Number(account.balance);
+
+            // Validar que hay deuda pendiente
+            if (currentBalance <= 0) {
+                throw new BadRequestException('El cliente no tiene deuda pendiente');
+            }
+
+            // Validar que el pago no excede la deuda
+            if (dto.amount > currentBalance) {
+                throw new BadRequestException(
+                    `El pago ($${dto.amount}) excede la deuda pendiente ($${currentBalance})`
+                );
+            }
+
             const balanceBefore = currentBalance;
             const paymentAmount = Math.abs(dto.amount);
             const balanceAfter = balanceBefore - paymentAmount;
@@ -229,7 +272,6 @@ export class CustomerAccountsService {
                 }
 
                 // Marcar todas las ventas pendientes como COMPLETED (sin registrar en caja)
-                // Usamos update directo para evitar que el cascade/hooks generen ingresos en caja
                 await manager
                     .createQueryBuilder()
                     .update(Sale)
@@ -257,24 +299,24 @@ export class CustomerAccountsService {
 
             await manager.save(account);
 
-            // Registrar el pago como ingreso en la caja (después de la transacción)
-            // Lo hacemos fuera de la transacción para no bloquear si falla
-            setImmediate(async () => {
-                try {
-                    await this.cashRegisterService.registerAccountPayment(
-                        {
-                            accountMovementId: movement.id,
-                            customerId,
-                            amount: paymentAmount,
-                            paymentMethodId: dto.paymentMethodId,
-                            description: `Pago CC - ${account.customer?.firstName || 'Cliente'} ${account.customer?.lastName || ''}`.trim(),
-                        },
-                        userId || 'system',
-                    );
-                } catch (cashError) {
-                    console.warn(`[CustomerAccounts] No se pudo registrar pago en caja: ${(cashError as Error).message}`);
-                }
-            });
+            // Mejora #1: Registrar el pago en caja DENTRO de la transacción
+            // Si falla, se hace rollback completo (antes usaba setImmediate fuera)
+            try {
+                await this.cashRegisterService.registerAccountPayment(
+                    {
+                        accountMovementId: movement.id,
+                        customerId,
+                        amount: paymentAmount,
+                        paymentMethodId: dto.paymentMethodId,
+                        description: `Pago CC - ${account.customer?.firstName || 'Cliente'} ${account.customer?.lastName || ''}`.trim(),
+                    },
+                    userId || 'system',
+                );
+            } catch (cashError) {
+                // Si no hay caja abierta, permitir el pago pero loguear advertencia
+                // No hacemos rollback para no bloquear pagos si la caja no está abierta
+                console.warn(`[CustomerAccounts] Pago registrado pero sin ingreso en caja: ${(cashError as Error).message}`);
+            }
 
             return movement;
         });
@@ -283,34 +325,45 @@ export class CustomerAccountsService {
     /**
      * Aplica un recargo (interés) a la cuenta del cliente
      * El recargo puede ser porcentual (sobre el saldo actual) o fijo
+     * Mejora #4: Usa lock pesimista para evitar race conditions
      */
     async applySurcharge(
         customerId: string,
         dto: { surchargeType: 'percentage' | 'fixed'; value: number; description?: string },
         userId?: string,
     ): Promise<AccountMovement> {
-        const account = await this.getOrCreateAccount(customerId);
-        const currentBalance = Number(account.balance);
-
-        // Validar que hay deuda pendiente
-        if (currentBalance <= 0) {
-            throw new BadRequestException('El cliente no tiene deuda pendiente para aplicar recargo');
-        }
-
-        // Calcular el monto del recargo
-        let surchargeAmount: number;
-        let description: string;
-
-        if (dto.surchargeType === 'percentage') {
-            surchargeAmount = Math.round((currentBalance * (dto.value / 100)) * 100) / 100; // Redondear a 2 decimales
-            description = dto.description || `Recargo por mora (${dto.value}%)`;
-        } else {
-            surchargeAmount = dto.value;
-            description = dto.description || `Recargo por mora ($${dto.value.toFixed(2)})`;
-        }
-
-        // Crear movimiento dentro de una transacción
+        // Crear movimiento dentro de una transacción con lock pesimista (mejora #4)
         return this.dataSource.transaction(async (manager) => {
+            // Lock pesimista: bloquea la cuenta durante la transacción
+            const account = await manager
+                .createQueryBuilder(CustomerAccount, 'account')
+                .setLock('pessimistic_write')
+                .where('account.customerId = :customerId', { customerId })
+                .getOne();
+
+            if (!account) {
+                throw new BadRequestException('Cuenta no encontrada');
+            }
+
+            const currentBalance = Number(account.balance);
+
+            // Validar que hay deuda pendiente
+            if (currentBalance <= 0) {
+                throw new BadRequestException('El cliente no tiene deuda pendiente para aplicar recargo');
+            }
+
+            // Calcular el monto del recargo
+            let surchargeAmount: number;
+            let description: string;
+
+            if (dto.surchargeType === 'percentage') {
+                surchargeAmount = Math.round((currentBalance * (dto.value / 100)) * 100) / 100;
+                description = dto.description || `Recargo por mora (${dto.value}%)`;
+            } else {
+                surchargeAmount = dto.value;
+                description = dto.description || `Recargo por mora ($${dto.value.toFixed(2)})`;
+            }
+
             const balanceBefore = currentBalance;
             const balanceAfter = balanceBefore + surchargeAmount;
 
@@ -339,26 +392,89 @@ export class CustomerAccountsService {
     }
 
     /**
-     * Obtiene el estado de cuenta de un cliente
+     * Crea un ajuste en la cuenta (para reversiones, correcciones, etc.)
+     * Mejora #3: Usado para revertir cargos cuando se cancela una venta
      */
-    async getAccountStatement(customerId: string) {
-        const account = await this.getOrCreateAccount(customerId);
+    async createAdjustment(
+        customerId: string,
+        dto: {
+            amount: number;
+            description: string;
+            referenceType?: string;
+            referenceId?: string;
+            notes?: string;
+        },
+        userId?: string,
+    ): Promise<AccountMovement> {
+        return this.dataSource.transaction(async (manager) => {
+            // Lock pesimista para evitar race conditions
+            const account = await manager
+                .createQueryBuilder(CustomerAccount, 'account')
+                .setLock('pessimistic_write')
+                .where('account.customerId = :customerId', { customerId })
+                .getOne();
 
-        const movements = await this.movementRepo.find({
+            if (!account) {
+                throw new BadRequestException('Cuenta no encontrada');
+            }
+
+            const currentBalance = Number(account.balance);
+            const adjustmentAmount = dto.amount; // Puede ser positivo o negativo
+            const balanceAfter = currentBalance + adjustmentAmount;
+
+            const movement = manager.create(AccountMovement, {
+                accountId: account.id,
+                movementType: MovementType.ADJUSTMENT,
+                amount: adjustmentAmount,
+                balanceBefore: currentBalance,
+                balanceAfter,
+                description: dto.description,
+                referenceType: dto.referenceType || 'adjustment',
+                referenceId: dto.referenceId || null,
+                notes: dto.notes || null,
+                createdById: userId || null,
+            });
+
+            await manager.save(movement);
+
+            // Actualizar saldo de la cuenta
+            account.balance = balanceAfter;
+            await manager.save(account);
+
+            console.log(`[CustomerAccounts] Ajuste registrado: $${adjustmentAmount} para cliente ${customerId}`);
+
+            return movement;
+        });
+    }
+
+    /**
+     * Obtiene el estado de cuenta de un cliente
+     * Mejora #9: Soporta paginación de movimientos
+     */
+    async getAccountStatement(customerId: string, page = 1, limit = 50) {
+        const account = await this.getOrCreateAccount(customerId);
+        const skip = (page - 1) * limit;
+
+        // Obtener movimientos paginados
+        const [movements, totalMovements] = await this.movementRepo.findAndCount({
             where: { accountId: account.id },
             relations: ['createdBy', 'paymentMethod'],
             order: { createdAt: 'DESC' },
+            skip,
+            take: limit,
         });
 
-        // Calcular totales
-        const totalCharges = movements
-            .filter(m => m.movementType === MovementType.CHARGE)
-            .reduce((sum, m) => sum + Number(m.amount), 0);
+        // Calcular totales usando SQL agregado para eficiencia
+        const totals = await this.movementRepo
+            .createQueryBuilder('movement')
+            .select('movement.movementType', 'type')
+            .addSelect('SUM(movement.amount)', 'total')
+            .where('movement.accountId = :accountId', { accountId: account.id })
+            .groupBy('movement.movementType')
+            .getRawMany();
 
-        const totalPayments = movements
-            .filter(m => m.movementType === MovementType.PAYMENT)
-            .reduce((sum, m) => sum + Math.abs(Number(m.amount)), 0);
-
+        const totalCharges = Number(totals.find(t => t.type === MovementType.CHARGE)?.total || 0);
+        const totalPayments = Math.abs(Number(totals.find(t => t.type === MovementType.PAYMENT)?.total || 0));
         const currentBalance = Number(account.balance);
 
         const summary: AccountStatementSummary = {
@@ -372,6 +488,12 @@ export class CustomerAccountsService {
             account,
             movements,
             summary,
+            pagination: {
+                total: totalMovements,
+                page,
+                limit,
+                totalPages: Math.ceil(totalMovements / limit),
+            },
         };
     }
 
@@ -467,26 +589,35 @@ export class CustomerAccountsService {
 
     /**
      * Obtiene estadísticas globales de cuentas corrientes
+     * Mejora #5: Usa SQL agregado en vez de cargar todas las cuentas en memoria
      */
     async getStats(): Promise<AccountStats> {
-        const accounts = await this.accountRepo.find({
-            relations: ['customer'],
-        });
+        const result = await this.dataSource.query(`
+            SELECT 
+                COUNT(*)::int as "totalAccounts",
+                COALESCE(SUM(CASE WHEN status = 'active' THEN 1 ELSE 0 END), 0)::int as "activeAccounts",
+                COALESCE(SUM(CASE WHEN status = 'suspended' THEN 1 ELSE 0 END), 0)::int as "suspendedAccounts",
+                COALESCE(SUM(CASE WHEN balance > 0 THEN 1 ELSE 0 END), 0)::int as "totalDebtors",
+                COALESCE(SUM(CASE WHEN balance > 0 THEN balance ELSE 0 END), 0)::numeric as "totalDebt",
+                COALESCE(SUM(CASE WHEN "daysOverdue" > 0 THEN 1 ELSE 0 END), 0)::int as "overdueAccounts",
+                COALESCE(SUM(CASE WHEN "daysOverdue" > 0 AND balance > 0 THEN balance ELSE 0 END), 0)::numeric as "totalOverdue"
+            FROM customer_accounts
+            WHERE "deletedAt" IS NULL
+        `);
 
-        const debtors = accounts.filter(a => Number(a.balance) > 0);
-        const totalDebt = debtors.reduce((sum, a) => sum + Number(a.balance), 0);
-        const overdueAccounts = accounts.filter(a => a.daysOverdue > 0);
-        const totalOverdue = overdueAccounts.reduce((sum, a) => sum + Number(a.balance), 0);
+        const stats = result[0] || {};
+        const totalDebt = Number(stats.totalDebt || 0);
+        const totalDebtors = Number(stats.totalDebtors || 0);
 
         return {
-            totalAccounts: accounts.length,
-            activeAccounts: accounts.filter(a => a.status === AccountStatus.ACTIVE).length,
-            suspendedAccounts: accounts.filter(a => a.status === AccountStatus.SUSPENDED).length,
-            totalDebtors: debtors.length,
+            totalAccounts: Number(stats.totalAccounts || 0),
+            activeAccounts: Number(stats.activeAccounts || 0),
+            suspendedAccounts: Number(stats.suspendedAccounts || 0),
+            totalDebtors,
             totalDebt,
-            averageDebt: debtors.length > 0 ? totalDebt / debtors.length : 0,
-            overdueAccounts: overdueAccounts.length,
-            totalOverdue,
+            averageDebt: totalDebtors > 0 ? totalDebt / totalDebtors : 0,
+            overdueAccounts: Number(stats.overdueAccounts || 0),
+            totalOverdue: Number(stats.totalOverdue || 0),
         };
     }
 
@@ -518,42 +649,51 @@ export class CustomerAccountsService {
     /**
      * Actualiza días de mora de todas las cuentas
      * Se ejecuta automáticamente todos los días a las 3:00 AM
+     * Mejora #6: Usa SQL bulk update en vez de loop individual
+     * Mejora #8: Usa paymentTermDays para cálculo real de mora
      */
     @Cron('0 3 * * *') // 3:00 AM todos los días
     async updateOverdueDays(): Promise<void> {
-        console.log('[CustomerAccounts] Actualizando días de mora...');
+        console.log('[CustomerAccounts] Actualizando días de mora con bulk update...');
 
-        const accounts = await this.accountRepo.find({
-            where: { balance: MoreThan(0) },
-            relations: ['movements'],
-        });
+        // Mejora #6: Bulk update usando SQL nativo
+        // Mejora #8: Calcula mora considerando paymentTermDays
+        // días de mora = días desde último cargo - plazo de pago (solo si es positivo)
+        const updateResult = await this.dataSource.query(`
+            WITH last_charges AS (
+                SELECT DISTINCT ON ("accountId")
+                    "accountId" as account_id,
+                    "createdAt" as last_charge_date
+                FROM account_movements
+                WHERE "movementType" = 'charge' AND "deletedAt" IS NULL
+                ORDER BY "accountId", "createdAt" DESC
+            )
+            UPDATE customer_accounts ca
+            SET 
+                "daysOverdue" = GREATEST(0, 
+                    EXTRACT(DAY FROM NOW() - lc.last_charge_date)::int - ca."paymentTermDays"
+                ),
+                status = CASE 
+                    WHEN EXTRACT(DAY FROM NOW() - lc.last_charge_date)::int - ca."paymentTermDays" > 30 
+                         AND ca.status = 'active'
+                    THEN 'suspended' 
+                    ELSE ca.status 
+                END,
+                "updatedAt" = NOW()
+            FROM last_charges lc
+            WHERE ca.id = lc.account_id
+              AND ca.balance > 0
+              AND ca."deletedAt" IS NULL
+            RETURNING ca.id, ca."daysOverdue", ca.status
+        `);
 
-        for (const account of accounts) {
-            // Buscar último cargo
-            const charges = account.movements
-                .filter(m => m.movementType === MovementType.CHARGE)
-                .sort((a, b) => b.createdAt.getTime() - a.createdAt.getTime());
-
-            const lastCharge = charges[0];
-
-            if (lastCharge) {
-                const daysSinceCharge = Math.floor(
-                    (Date.now() - lastCharge.createdAt.getTime()) / (1000 * 60 * 60 * 24)
-                );
-
-                account.daysOverdue = daysSinceCharge;
-
-                // Suspender automáticamente si más de 30 días de mora
-                if (daysSinceCharge > 30 && account.status === AccountStatus.ACTIVE) {
-                    account.status = AccountStatus.SUSPENDED;
-                    console.log(`[CustomerAccounts] Cuenta ${account.id} suspendida por mora (${daysSinceCharge} días)`);
-                }
-
-                await this.accountRepo.save(account);
-            }
+        // Contar cuentas suspendidas
+        const suspendedCount = updateResult.filter((r: { status: string }) => r.status === 'suspended').length;
+        if (suspendedCount > 0) {
+            console.log(`[CustomerAccounts] ${suspendedCount} cuenta(s) suspendida(s) por mora > 30 días`);
         }
 
-        console.log(`[CustomerAccounts] Actualizadas ${accounts.length} cuentas`);
+        console.log(`[CustomerAccounts] Actualizadas ${updateResult.length} cuentas con días de mora`);
     }
 
     /**

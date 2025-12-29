@@ -146,11 +146,11 @@ export class BackupService {
 
         const filePath = path.join(destinationPath, filename);
 
-        // Crear registro inicial
+        // Crear registro inicial (guardamos antes de ejecutar para tener el ID)
         const backup = this.backupRepository.create({
             filename,
             filePath,
-            status: BackupStatus.PENDING,
+            status: BackupStatus.COMPLETED,
             createdByUsername: username,
         });
 
@@ -356,7 +356,8 @@ export class BackupService {
     }
 
     /**
-     * Elimina un backup (registro y archivo)
+     * Elimina un backup (solo el registro, NO el archivo físico)
+     * El archivo se mantiene para que el usuario pueda restaurarlo manualmente si lo necesita
      */
     async delete(id: string): Promise<void> {
         const backup = await this.findOne(id);
@@ -365,14 +366,10 @@ export class BackupService {
             throw new Error('Backup no encontrado');
         }
 
-        // Eliminar archivo si existe
-        if (fs.existsSync(backup.filePath)) {
-            fs.unlinkSync(backup.filePath);
-            this.logger.log(`Archivo de backup eliminado: ${backup.filePath}`);
-        }
-
-        // Eliminar registro
+        // Solo eliminar el registro de la base de datos
+        // El archivo físico se mantiene para permitir restauración manual
         await this.backupRepository.delete(id);
+        this.logger.log(`Registro de backup eliminado (archivo conservado): ${backup.filePath}`);
     }
 
     /**

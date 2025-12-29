@@ -277,7 +277,15 @@ export class ProductsService {
         return updated;
     }
 
+    /**
+     * Calcula el precio de venta basado en costo y margen
+     * FIX 7.7: Maneja productos con costo $0 (gratuitos/promocionales)
+     */
     private calculatePrice(cost: number, profitMargin: number): number {
+        // Protección para productos gratuitos o sin costo definido
+        if (cost <= 0) {
+            return 0;
+        }
         const price = cost * (1 + profitMargin / 100);
         return Math.round(price * 100) / 100;
     }

@@ -6,12 +6,16 @@ import { authService } from '../services/auth.service';
 import { useAuthStore } from '../stores/auth.store';
 import { Sidebar } from './Sidebar';
 import { Loader2 } from 'lucide-react';
+import { useRouteRefresh } from '@/hooks/useRouteRefresh';
 
 export function DashboardLayout() {
     const navigate = useNavigate();
     const queryClient = useQueryClient();
     const { user, setUser, logout } = useAuthStore();
     const [sidebarCollapsed, setSidebarCollapsed] = useState(false);
+
+    // Forzar refetch de datos al navegar entre rutas del sidebar
+    useRouteRefresh();
 
     // Obtener perfil del usuario al montar el componente
     const { data: profile } = useQuery({

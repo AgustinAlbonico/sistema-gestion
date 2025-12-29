@@ -18,6 +18,7 @@ import {
     ApiOperation,
     ApiResponse,
     ApiBearerAuth,
+    ApiQuery,
     ApiParam,
 } from '@nestjs/swagger';
 import { JwtAuthGuard } from '../auth/guards/jwt-auth.guard';
@@ -87,13 +88,22 @@ export class CustomerAccountsController {
 
     /**
      * Obtiene el estado de cuenta de un cliente
+     * Mejora #9: Soporta paginación de movimientos
      */
     @Get(':customerId')
     @ApiOperation({ summary: 'Obtener estado de cuenta de un cliente' })
     @ApiParam({ name: 'customerId', description: 'ID del cliente' })
+    @ApiQuery({ name: 'page', required: false, type: Number, description: 'Página de movimientos' })
+    @ApiQuery({ name: 'limit', required: false, type: Number, description: 'Cantidad por página (max 100)' })
     @ApiResponse({ status: 200, description: 'Estado de cuenta del cliente' })
-    async getAccountStatement(@Param('customerId') customerId: string) {
-        return this.accountsService.getAccountStatement(customerId);
+    async getAccountStatement(
+        @Param('customerId') customerId: string,
+        @Query('page') page?: number,
+        @Query('limit') limit?: number,
+    ) {
+        const pageNum = page && page > 0 ? Number(page) : 1;
+        const limitNum = limit && limit > 0 ? Math.min(Number(limit), 100) : 50;
+        return this.accountsService.getAccountStatement(customerId, pageNum, limitNum);
     }
 
     /**

@@ -14,7 +14,6 @@ export interface Backup {
 }
 
 export enum BackupStatus {
-    PENDING = 'pending',
     COMPLETED = 'completed',
     FAILED = 'failed',
 }
