@@ -12,7 +12,7 @@ import { PaymentMethod as PaymentMethodEntity } from '../configuration/entities/
 import { OpenCashRegisterDto } from './dto/open-cash-register.dto';
 import { CloseCashRegisterDto } from './dto/close-cash-register.dto';
 import { CashFlowReportFiltersDto } from './dto/cash-flow-report-filters.dto';
-import { getTodayLocalDate } from '../../common/utils/date.utils';
+import { getTodayLocalDate, formatDateLocal } from '../../common/utils/date.utils';
 import { AuditService } from '../audit/audit.service';
 import { AuditEntityType, AuditAction } from '../audit/enums';
 
@@ -353,16 +353,21 @@ export class CashRegisterService {
 
     /**
      * Verifica si una fecha corresponde al día actual
-     * Compara strings de fecha para evitar problemas de zona horaria
+     * FIX Issue #12: Usa formatDateLocal en lugar de toISOString para evitar problemas de zona horaria
      */
     private isSameDayAsToday(date: Date | string): boolean {
         const todayDate = getTodayLocalDate();
-        const todayString = todayDate.toISOString().split('T')[0]; // YYYY-MM-DD
+        // Usar formatDateLocal para obtener YYYY-MM-DD en zona horaria local
+        const todayString = formatDateLocal(todayDate);
 
-        // La fecha puede ser un Date o un string, normalizarla
-        const dateString = date instanceof Date
-            ? date.toISOString().split('T')[0]
-            : String(date).split('T')[0];
+        // La fecha puede ser un Date o un string, normalizarla usando formato local
+        let dateString: string;
+        if (date instanceof Date) {
+            dateString = formatDateLocal(date);
+        } else {
+            // Si es string, puede venir como YYYY-MM-DD o como ISO completo
+            dateString = String(date).split('T')[0];
+        }
 
         return dateString === todayString;
     }

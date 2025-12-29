@@ -70,10 +70,27 @@ export class SalesService {
 
     /**
      * Valida que todos los productos existan y tengan stock suficiente
+     * @param items - Items de la venta a validar
+     * @param manager - EntityManager opcional para usar dentro de una transacción con lock
      */
-    private async validateProductsStock(items: CreateSaleDto['items']): Promise<void> {
+    private async validateProductsStock(
+        items: CreateSaleDto['items'],
+        manager?: EntityManager
+    ): Promise<void> {
         for (const item of items) {
-            const product = await this.productsService.findOne(item.productId);
+            let product;
+
+            if (manager) {
+                // Usar lock pesimista FOR UPDATE para evitar race conditions
+                product = await manager
+                    .createQueryBuilder('Product', 'p')
+                    .setLock('pessimistic_write')
+                    .where('p.id = :id', { id: item.productId })
+                    .getOne();
+            } else {
+                product = await this.productsService.findOne(item.productId);
+            }
+
             if (!product) {
                 throw new NotFoundException(`Producto con ID ${item.productId} no encontrado`);
             }
@@ -87,6 +104,7 @@ export class SalesService {
 
     /**
      * Calcula los totales de la venta (subtotal, impuestos, total)
+     * Valida que el descuento no supere el subtotal + impuestos (Issue #8)
      */
     private calculateSaleTotals(dto: CreateSaleDto): { subtotal: number; totalTax: number; total: number } {
         const subtotal = dto.items.reduce(
@@ -99,7 +117,22 @@ export class SalesService {
             totalTax = dto.taxes.reduce((sum, tax) => sum + tax.amount, 0);
         }
 
-        const total = subtotal + totalTax - (dto.discount || 0) + (dto.surcharge || 0);
+        const discount = dto.discount || 0;
+        const maxDiscount = subtotal + totalTax;
+
+        // Validar que el descuento no supere el subtotal + impuestos
+        if (discount > maxDiscount) {
+            throw new BadRequestException(
+                `El descuento ($${discount.toFixed(2)}) no puede superar el subtotal más impuestos ($${maxDiscount.toFixed(2)})`
+            );
+        }
+
+        const total = subtotal + totalTax - discount + (dto.surcharge || 0);
+
+        // Validar que el total no sea negativo
+        if (total < 0) {
+            throw new BadRequestException('El total de la venta no puede ser negativo');
+        }
 
         return { subtotal, totalTax, total };
     }
@@ -233,7 +266,8 @@ export class SalesService {
             );
         }
 
-        // Validar productos y stock
+        // Validación inicial ligera (sin lock) - la validación definitiva se hace dentro de la transacción
+        // Esto evita iniciar transacciones innecesarias para errores obvios
         await this.validateProductsStock(dto.items);
 
         // Calcular totales
@@ -250,6 +284,10 @@ export class SalesService {
         await queryRunner.startTransaction();
 
         try {
+            // VALIDACIÓN DEFINITIVA CON LOCK PESIMISTA (Issue #1 - Race Condition)
+            // Re-validar stock dentro de la transacción con lock FOR UPDATE
+            await this.validateProductsStock(dto.items, queryRunner.manager);
+
             // Generar número de venta
             const saleNumber = await this.generateSaleNumber();
 
@@ -577,6 +615,18 @@ export class SalesService {
             sale.inventoryUpdated = false;
         }
 
+        // FIX Issue #5: Revertir cargo de cuenta corriente si la venta era a cuenta corriente
+        if (sale.isOnAccount && sale.customerId) {
+            try {
+                const reverted = await this.customerAccountsService.revertChargeBySaleId(id, userId);
+                if (reverted) {
+                    console.log(`[Ventas] Cargo de cuenta corriente revertido para venta ${sale.saleNumber}`);
+                }
+            } catch (error) {
+                console.warn(`[Ventas] Error al revertir cargo de cuenta corriente: ${(error as Error).message}`);
+            }
+        }
+
         sale.status = SaleStatus.CANCELLED;
         const savedSale = await this.saleRepo.save(sale);
 
@@ -649,6 +699,15 @@ export class SalesService {
 
         if (sale.status === SaleStatus.COMPLETED) {
             throw new BadRequestException('La venta ya está completada');
+        }
+
+        // VALIDACIÓN DE MONTO DE PAGOS (Issue #9)
+        const totalPayments = payments.reduce((sum, p) => sum + p.amount, 0);
+        const saleTotal = Number(sale.total);
+        if (Math.abs(totalPayments - saleTotal) > 0.01) {
+            throw new BadRequestException(
+                `El total de pagos ($${totalPayments.toFixed(2)}) no coincide con el total de la venta ($${saleTotal.toFixed(2)})`
+            );
         }
 
         // Validar que haya caja abierta

@@ -190,6 +190,26 @@ export function SaleDetail({ sale: initialSale, saleId, open, onClose }: SaleDet
                     </div>
                 </div>
 
+                {/* FIX Issue #6: Alerta prominente de error fiscal */}
+                {hasInvoiceError && (sale.fiscalError || sale.invoice?.afipErrorMessage) && (
+                    <div className="mx-6 mt-4 p-4 rounded-lg bg-orange-100 dark:bg-orange-900/30 border border-orange-300 dark:border-orange-700">
+                        <div className="flex items-start gap-3">
+                            <AlertTriangle className="h-5 w-5 text-orange-600 dark:text-orange-400 flex-shrink-0 mt-0.5" />
+                            <div className="flex-1 min-w-0">
+                                <h4 className="text-sm font-semibold text-orange-800 dark:text-orange-200">
+                                    Error en Facturación Fiscal
+                                </h4>
+                                <p className="text-sm text-orange-700 dark:text-orange-300 mt-1 break-words">
+                                    {sale.fiscalError || sale.invoice?.afipErrorMessage || 'Error desconocido al generar la factura fiscal.'}
+                                </p>
+                                <p className="text-xs text-orange-600 dark:text-orange-400 mt-2">
+                                    Puede reintentar la facturación desde la sección "Facturación" más abajo.
+                                </p>
+                            </div>
+                        </div>
+                    </div>
+                )}
+
                 {/* Contenido principal */}
                 <div className="p-6 space-y-5">
                     {/* Información general */}

@@ -195,14 +195,15 @@ export class CustomerAccountsService {
             );
         }
 
+        const paymentAmount = Math.abs(dto.amount);
+
         // Crear movimiento dentro de una transacción
-        return this.dataSource.transaction(async (manager) => {
+        const movement = await this.dataSource.transaction(async (manager) => {
             const balanceBefore = currentBalance;
-            const paymentAmount = Math.abs(dto.amount);
             const balanceAfter = balanceBefore - paymentAmount;
             const isFullPayment = balanceAfter === 0;
 
-            const movement = manager.create(AccountMovement, {
+            const newMovement = manager.create(AccountMovement, {
                 accountId: account.id,
                 movementType: MovementType.PAYMENT,
                 amount: -paymentAmount, // Negativo = crédito
@@ -215,7 +216,7 @@ export class CustomerAccountsService {
                 createdById: userId || null,
             });
 
-            await manager.save(movement);
+            await manager.save(newMovement);
 
             // Actualizar saldo de la cuenta
             account.balance = balanceAfter;
@@ -257,27 +258,31 @@ export class CustomerAccountsService {
 
             await manager.save(account);
 
-            // Registrar el pago como ingreso en la caja (después de la transacción)
-            // Lo hacemos fuera de la transacción para no bloquear si falla
-            setImmediate(async () => {
-                try {
-                    await this.cashRegisterService.registerAccountPayment(
-                        {
-                            accountMovementId: movement.id,
-                            customerId,
-                            amount: paymentAmount,
-                            paymentMethodId: dto.paymentMethodId,
-                            description: `Pago CC - ${account.customer?.firstName || 'Cliente'} ${account.customer?.lastName || ''}`.trim(),
-                        },
-                        userId || 'system',
-                    );
-                } catch (cashError) {
-                    console.warn(`[CustomerAccounts] No se pudo registrar pago en caja: ${(cashError as Error).message}`);
-                }
-            });
-
-            return movement;
+            return newMovement;
         });
+
+        // FIX Issue #2: Registrar el pago en caja de forma SÍNCRONA después de la transacción
+        // Si falla, logueamos el error pero no revertimos el pago (ya está persistido)
+        // Esto evita descuadres en el arqueo de caja
+        try {
+            await this.cashRegisterService.registerAccountPayment(
+                {
+                    accountMovementId: movement.id,
+                    customerId,
+                    amount: paymentAmount,
+                    paymentMethodId: dto.paymentMethodId,
+                    description: `Pago CC - ${account.customer?.firstName || 'Cliente'} ${account.customer?.lastName || ''}`.trim(),
+                },
+                userId || 'system',
+            );
+            console.log(`[CustomerAccounts] Pago registrado en caja exitosamente: $${paymentAmount}`);
+        } catch (cashError) {
+            // Logear error pero no revertir el pago - el movimiento ya está persistido
+            console.error(`[CustomerAccounts] ERROR CRÍTICO: No se pudo registrar pago en caja: ${(cashError as Error).message}`);
+            console.error(`[CustomerAccounts] El pago ID ${movement.id} debe registrarse manualmente en caja`);
+        }
+
+        return movement;
     }
 
     /**
@@ -704,6 +709,61 @@ export class CustomerAccountsService {
             totalAmount,
             sales: result,
         };
+    }
+
+    /**
+     * Revierte el cargo de una venta cuando se cancela (Issue #5)
+     * Crea un movimiento de ajuste como crédito al cliente
+     * @param saleId - ID de la venta cancelada
+     * @param userId - Usuario que realiza la reversión
+     * @returns true si se revirtió un cargo, false si no había cargo para revertir
+     */
+    async revertChargeBySaleId(saleId: string, userId?: string): Promise<boolean> {
+        // Buscar el movimiento de cargo original de esta venta
+        const originalCharge = await this.movementRepo.findOne({
+            where: {
+                referenceType: 'sale',
+                referenceId: saleId,
+                movementType: MovementType.CHARGE,
+            },
+            relations: ['account'],
+        });
+
+        if (!originalCharge) {
+            console.log(`[CustomerAccounts] No se encontró cargo para revertir de venta ${saleId}`);
+            return false;
+        }
+
+        const account = originalCharge.account;
+        const chargeAmount = Math.abs(Number(originalCharge.amount));
+
+        return this.dataSource.transaction(async (manager) => {
+            const currentBalance = Number(account.balance);
+            const balanceAfter = currentBalance - chargeAmount;
+
+            // Crear movimiento de ajuste (crédito al cliente)
+            const reversal = manager.create(AccountMovement, {
+                accountId: account.id,
+                movementType: MovementType.ADJUSTMENT,
+                amount: -chargeAmount, // Negativo = crédito al cliente
+                balanceBefore: currentBalance,
+                balanceAfter,
+                description: `Reversión por cancelación de venta`,
+                referenceType: 'sale_cancellation',
+                referenceId: saleId,
+                notes: `Reversión automática del cargo original ID: ${originalCharge.id}`,
+                createdById: userId || null,
+            });
+
+            await manager.save(reversal);
+
+            // Actualizar saldo de la cuenta
+            account.balance = balanceAfter;
+            await manager.save(account);
+
+            console.log(`[CustomerAccounts] Cargo revertido para venta ${saleId}. Monto: $${chargeAmount}`);
+            return true;
+        });
     }
 }
 
